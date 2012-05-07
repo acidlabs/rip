@@ -1,4 +1,4 @@
 rip
 ===
 
-REST in Peace, an opinionated REST framework
+REST in Peace, an unopinionated REST framework
