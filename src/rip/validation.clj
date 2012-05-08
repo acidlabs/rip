@@ -3,6 +3,7 @@
 
 (def messages
   {:min-length "wea wea"
+   :max-length "wea wea"
    :type-error "Error de tipo"
    :required-error "Null error"
    :no-error ""
@@ -12,15 +13,15 @@
   [test code & msg-params]
   {:valid? test :error {:message (apply format (code messages) msg-params) :code code}})
 
+;; Collections constratints
 (defn min-length [min] (fn [val] (gen-validation (>= (count val) min) :min-length min)))
-(defn max-length [max] (fn [val] (gen-validation (<= (count val) :max-length max))))
+(defn max-length [max] (fn [val] (gen-validation (<= (count val) max) :max-length max)))
 (defn range-length [min max] (fn [val] (gen-validation (or (>= (count val) min) (<= (count val) :range-length min max)))))
 
+;; Numbers constratints
 (defn min [min] (fn [val] (gen-validation (>= val min) :min min)))
 (defn max [max] (fn [val] (gen-validation (<= val max) :max max)))
 (defn range [min max] (fn [val] (gen-validation (or (>= val min) (<= val max)) :range min max)))
-
-(defn rut [] (fn [val] (assoc (gen-validation (nil? (re-find #"" val)) :rut-error) :output (st/split "142512521-5" #"-"))))
 
 (defn type-of
   [valid-type & [opts]]
@@ -28,7 +29,7 @@
     (fn [field val]
       (if val
         (cond (class? valid-type) (assoc (gen-validation (= (type val) valid-type) :type-error) :output val :input val)
-              (fn? valid-type) (valid-type field val))
+              (fn? valid-type) (valid-type val))
         (if required?
           (gen-validation false :required-error)
           (gen-validation true :no-error))))))
@@ -38,10 +39,25 @@
   (let [required? (= opts :required)]
     (fn [field list]
       (if list
-        (cond (class? valid-type) (map (fn [val]
-                                         (assoc (gen-validation (= (type val) valid-type) :type-error) :output val :input val))
-                                       list)
-              (fn? valid-type) (map valid-type list))
+        (let [[valid? input output]
+              (reduce
+               (cond (class? valid-type)
+                     (fn [[valid-list? input output] val]
+                       (let [valid-elem? (= (type val) valid-type)]
+                         [(and valid-elem? valid-list?)
+                          (if valid-elem? input (conj input
+                                                      (assoc (select-keys (gen-validation false :type-error) [:error])
+                                                        :input val)))
+                          (if valid-elem? (conj output val) output)]))
+                     (fn? valid-type)
+                     (fn [[valid-list? input output] val]
+                       (let [{valid-elem? :valid? output-elem :output :as validation} (valid-type val)]
+                         [(and valid-elem? valid-list?)
+                          (if valid-elem? input (conj input (select-keys validation [:input :error])))
+                          (if valid-elem? (conj output output-elem) output)])))
+               [true [] []]
+               list)]
+          (assoc (gen-validation valid? :type-error) :output output :input input))
         (if required?
           (gen-validation false :required-error)
           (gen-validation true :no-error))))))
@@ -56,8 +72,8 @@
              (if valid?
                (if output
                  (let [errors (reduce
-                               (fn [errors valid]
-                                 (let [{:keys [valid? error]} (valid output)]
+                               (fn [errors constraint]
+                                 (let [{:keys [valid? error]} (constraint output)]
                                    (if valid? errors (cons error errors))))
                                []
                                constraints)
@@ -67,7 +83,7 @@
                      [valid-output (assoc error-output field-name {:input input :error errors})]))
                  [valid-output error-output])
                [(assoc valid-output field-name output) (assoc error-output field-name
-                                                              (if (map? output)
+                                                              (if (coll? output)
                                                                 input
                                                                 (select-keys validation [:input :error])))])))
          [{} {}]
@@ -79,7 +95,7 @@
 (defmacro defvalidator
   [name fields]
   `(defn ~name
-     [value#] (defvalidator* ~(keyword (str name)) value# ~fields)))
+     [value#] (defvalidator* value# ~fields)))
 
 (defvalidator phone
   {:numero [(type-of Long :required)]})
@@ -87,6 +103,7 @@
 (def user-schema
   {:nombre [(type-of Boolean :required)]
    :telefono [(type-of phone :required)]
+   :telefonos [(list-of phone :required)]
    :clave  [(type-of String :required) (min-length 3)]})
 
 (defvalidator user
@@ -94,7 +111,7 @@
 
 (user
  {:nombre true
-  :clave "aaasdasd"
+  :clave "aaa"
   :basura "SDFsdfsdf"
-  :telefono {:numero :numero}
-  234 234})
+  :telefono {:numero 12432}
+  :telefonos [{:numero 234234}]})
