@@ -29,7 +29,7 @@
 (defn- query-url [uri params]
   (str (url uri params)))
 
-(defn- ->url [url {:keys [path-params query-params]}]
+(defn ->url [url {:keys [path-params query-params]}]
   (query-url (path-url url path-params) query-params))
 
 (defmacro defendpoint
