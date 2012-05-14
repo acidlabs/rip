@@ -1,7 +1,6 @@
 (ns rip.middleware
   (:require [cheshire.core :as json])
-  (:require [clojure.data.xml :as xml])
-  (:use [remvee.ring.middleware.basic-authentication]))
+  (:require [clojure.data.xml :as xml]))
 
 (defn- json-request?
   [req]
@@ -30,39 +29,22 @@
 (defn parse-xml [s] (xml->hash-map (xml/parse-str s)))
 
 (defn wrap-input-param [handler]
-  (fn [{:keys [body params] :as req}]
-    (if  ((not= (:request-method req) :delete) body)
+  (fn [{:keys [body params request-method] :as req}]
+    (if (and body (contains? #{:post :put} request-method))
       (let [bstr (slurp body)
-            dto (cond
-                  (json-request? req) (json/parse-string bstr true)
-                  (xml-request? req) (val (first (parse-xml bstr)))
-                  :else bstr)
-            req* (assoc req :params (assoc params :input input))]
+            input (cond
+                    (json-request? req) (json/parse-string bstr true)
+                    (xml-request? req) (val (first (parse-xml bstr)))
+                    :else bstr)
+            req* (assoc req :params (assoc params :input input :caca "caca"))]
         (handler req*))
       (handler req))))
 
-(defn authenticated? [name pass] (and (= name "foo") (= pass "bar")))
-
-(def wrap-authentication #(wrap-basic-authentication % authenticated?))
-
-(defn wrap-user [handler]
-  (fn [{:keys [body params] :as req}]
-    (if body
-      (let [bstr (slurp body)
-            dto (cond
-                  (json-request? req) (json/parse-string bstr true)
-                  (xml-request? req) (val (first (parse-xml bstr)))
-                  :else bstr)
-            req* (assoc req :params (assoc params :dto dto))]
-        (handler req*))
-      (handler req))))
-
-(defn wrap-utf-8
-  "Adds the 'charset=utf-8' clause onto the content type declaration,
-  allowing pages to display all utf-8 characters."
-  [handler]
+(defn wrap-server-error
+  "Wrap a handler such that exceptions are logged to *err* and then rethrown."
+  [handler f]
   (fn [request]
-    (let [resp (handler request)
-          ct (get-in resp [:headers "Content-Type"])
-          neue-ct (str ct "; charset=utf-8")]
-      (assoc-in resp [:headers "Content-Type"] neue-ct))))
+    (try
+      (handler request)
+      (catch Exception ex
+        (f ex)))))
