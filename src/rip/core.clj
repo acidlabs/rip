@@ -35,8 +35,9 @@
 (defmacro defaction
   "Define a compojure route with an action map with value :method, :consumer and :producer,
    also generate a reverse routing function named 'action-name'->url."
-  [name path {:keys [method consumer producer] :as action} args & body]
-  (let [method-sym (case method
+  [name path action args & body]
+  (let [{:keys [method consumer producer]} (eval action)
+        method-sym (case method
                      :get #'GET
                      :post #'POST
                      :put #'PUT
