@@ -32,16 +32,10 @@
 (defn ->url [url {:keys [path-params query-params]}]
   (query-url (path-url url path-params) query-params))
 
-(defmacro defendpoint
-  "Generate a route with consumer function of arguments [request action-fn] where:
-     - request: Original request
-     - action-fn: Function with a request as argument
-   A producer function with arguments [request result] where:
-     - request: Original request
-     - result: Last expression from body
-   Create a reverse route function of name \"route-name->url\"
-     e.g: (foo->url {:path-params {:id 1} :query-params {:name \"bar\"}})"
-  [name method path consumer producer args & body]
+(defmacro defaction
+  "Define a compojure route with an action map with value :method, :consumer and :producer,
+   also generate a reverse routing function named 'action-name'->url."
+  [name path {:keys [method consumer producer] :as action} args & body]
   (let [method-sym (case method
                      :get #'GET
                      :post #'POST
