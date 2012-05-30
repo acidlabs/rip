@@ -35,9 +35,8 @@
             input (cond
                     (json-request? req) (json/parse-string bstr true)
                     (xml-request? req) (val (first (parse-xml bstr)))
-                    :else bstr)
-            req* (assoc req :params (assoc params :input input :caca "caca"))]
-        (handler req*))
+                    :else bstr)]
+        (handler (assoc req :input input)))
       (handler req))))
 
 (defn wrap-server-error

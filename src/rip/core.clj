@@ -33,18 +33,20 @@
   (query-url (path-url url path-params) query-params))
 
 (defmacro defaction
-  "Define a compojure route with an action map with value :method, :consumer and :producer,
+  "Define a compojure route with an action vector of the form [method request-handler url-handler],
    also generate a reverse routing function named 'action-name'->url."
-  [name path action args & body]
-  (let [{:keys [method consumer producer]} (eval action)
-        method-sym (case method
+  [name path action]
+  (let [method-sym (case (:method (first (eval action)))
                      :get #'GET
                      :post #'POST
                      :put #'PUT
-                     :delete #'DELETE)]
-    `(do
-       (defn ~(symbol (str name "->url")) [params#] (->url ~path params#))
+                     :delete #'DELETE
+                     :options #'OPTIONS
+                     :head #'HEAD
+                     :patch #'PATCH)]
+    `(let [request-handler# (second ~action)
+           url-handler# (nth ~action 3)]
+       (defn ~(symbol (str name "->url")) [& params#] (url-handler# (->url ~path (first params#))))
        (def ~name
-         (~method-sym ~path request#
-                      (~consumer request# (fn [req#] (~producer request# (let-request [~args req#] ~@body))))))
+         (~method-sym ~path request# (request-handler# request#)))
        ~name)))
