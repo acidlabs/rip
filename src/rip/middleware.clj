@@ -12,35 +12,44 @@
   (if-let [#^String type (:content-type req)]
     (.startsWith type "application/xml")))
 
-(defn xml->hash-map [{:keys [tag content]}]
+(defn xml->hash-map
+  "USES read-string FUNCTION TO CONVERT INTO CLOJURE TYPES!!"
+  [{:keys [tag content]}]
   {tag (if (= (type (first content)) clojure.data.xml.Element)
-         (reduce (fn [m e]
-                   (let [[tag content] (first (xml->hash-map e))]
-                     (assoc m tag (if-let [x (m tag)]
-                                    (if (vector? x)
-                                      (cons x content)
-                                      [x content])
-                                    content)))) {} content)
+         (if (= tag :lista)
+           (reduce (fn [m e]
+                     (let [[tag content] (first (xml->hash-map e))]
+                       (cons content m)))
+                   []
+                   content)
+           (reduce (fn [m e]
+                     (let [[tag content] (first (xml->hash-map e))]
+                       (assoc m tag content)))
+                   {}
+                   content))
          (let [cont (first content)
                val (try (read-string cont)
                         (catch Exception e cont))]
-           (try (if (symbol? val) cont val))))})
+           (if (symbol? val)
+             cont
+             (if (= java.lang.Long (type val))
+               (try (int val) (Integer. val) (catch Exception e val))
+               val))))})
 
 (defn parse-xml [s] (xml->hash-map (xml/parse-str s)))
 
 (defn wrap-input-param [handler]
   (fn [{:keys [body params request-method] :as req}]
-    (if (and body (contains? #{:post :put} request-method))
-      (let [bstr (slurp body)
-            input (cond
-                    (json-request? req) (json/parse-string bstr true)
-                    (xml-request? req) (val (first (parse-xml bstr)))
-                    :else bstr)]
-        (handler (assoc req :input input)))
-      (handler req))))
+    (let [bstr (slurp body)
+          input (cond
+                  (json-request? req) (json/parse-string bstr true)
+                  (xml-request? req) (val (first (parse-xml bstr)))
+                  :else bstr)]
+      (handler (assoc req :input input)))
+    (handler req)))
 
 (defn wrap-server-error
-  "Wrap a handler such that exceptions are logged to *err* and then rethrown."
+  "Wrap a handler such that exceptions are handled with the given function"
   [handler f]
   (fn [request]
     (try

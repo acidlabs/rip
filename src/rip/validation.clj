@@ -1,5 +1,10 @@
 (ns rip.validation
+  (:import rip.RipException)
+  (:use korma.sql.fns
+        korma.core)
   (:require [clojure.string :as st]))
+
+;; Body validation
 
 (def ^{:private true} messages
   (atom
@@ -21,7 +26,7 @@
   [test code & msg-params]
   {:valid? test :error {:message (apply format (code @messages) msg-params) :code code}})
 
-;; Collections constraints
+;; Collections and strings constraints
 (defn min-length [min] (fn [val] (gen-validation (>= (count val) min) :min-length min)))
 (defn max-length [max] (fn [val] (gen-validation (<= (count val) max) :max-length max)))
 (defn range-length [min max] (fn [val] (gen-validation (or (>= (count val) min)
@@ -77,6 +82,7 @@
             (gen-validation true :no-error)))))))
 
 (defn required
+  "Used for declaring a required field"
   [type & constraints]
   (let [type-valid (if (vector? type)
                      (list-of (first type) :required)
@@ -86,6 +92,7 @@
       [type-valid])))
 
 (defn optional
+  "Used for declaring an optional field"
   [type & constraints]
   (let [type-valid (if (vector? type)
                      (list-of (first type))
@@ -127,3 +134,89 @@
       {:valid? (and (not (empty? valid-output)) (empty? error-output))
        :input error-output
        :output valid-output})))
+
+;; Filter validation
+
+(declare make-filter)
+
+(def invaid-filter (RipException. {:code :invalid-filter :message "Invalid filter structure"}))
+
+(def query-fns
+  {:eq  (fn [field [val]] {field val})
+   :neq (fn [field [val]] {field [pred-not= val]})
+   :gt  (fn [field [val]] {field [pred-> val]})
+   :lt  (fn [field [val]] {field [pred-< val]})
+   :ge  (fn [field [val]] {field [pred->= val]})
+   :le  (fn [field [val]] {field [pred-<= val]})
+   :rng (fn [field [min max]] (pred-or {field [pred->= min]} {field [pred-<= max]}))
+   :lk  (fn [field [val]] {field [pred-like val]})})
+
+(defn make-join
+  "Generates an aliased entity and a clause for the join"
+  [alias ent sub-alias sub-ent]
+  (let [rel @((:rel ent) (:table sub-ent))
+        field #(last (clojure.string/split (val (first %)) #"\""))
+        pk (field (:pk rel))
+        fk (field (:fk rel))]
+    [[sub-ent (keyword sub-alias)]
+     (apply pred-= (map
+                    (fn [[alias field]] (keyword (str (name alias) \. field)))
+                    [[alias pk] [sub-alias fk]]))]))
+
+(defn field-cond
+  "Generates the clause for a field assuming the input corresponds to a vector"
+  [field validator pred]
+  (let [[field validator] (cond (vector? validator) validator
+                                (keyword? validator) [validator identity]
+                                :else [field validator])]
+    (reduce
+     pred-or
+     (map (fn [pred]
+            (if (map? pred)
+              (reduce
+               pred-or
+               (map (fn [[f vals]]
+                      ((query-fns f) field
+                       (map validator (if (vector? vals) vals [vals]))))
+                    pred))
+              ((query-fns :eq) field (if (vector? pred) pred [pred]))))
+          pred))))
+
+(defn inner-entity
+  "Creates an inner entity based on the validator type"
+  [ent alias validator pred]
+  (cond
+    (fn? validator) (validator pred ent alias)
+    (map? validator) (make-filter ent alias validator pred)
+    :else (throw invaid-filter)))
+
+(defn make-filter
+  "Creates a validated pair of values consisting of a where clause, and
+   a set of joins, each with the aliased entity, and the join clause"
+  [ent alias fields data]
+  (reduce
+   (fn [[where joins :as result] [field validator]]
+     (if-let [pred (data field)]
+       (let [field (keyword (str alias "." (name field)))]
+         (cond
+           (vector? pred)
+           [(if (nil? where)
+              (field-cond field validator pred)
+              (pred-or where (field-cond field validator pred)))
+            joins]
+           (map? pred)
+           (let [[inner-where inner-joins] (inner-entity ent alias validator pred)]
+             [(pred-and where inner-where) (concat joins inner-joins)])
+           :else (throw invaid-filter)))
+       result))
+   [nil []]
+   fields))
+
+(defn query-validator
+  "Creates a function given an entity and a map of fields with the schema to be validated.
+   The generated function recives the filter map from the query string"
+  [{table :table :as ent} fields]
+  (fn [data & [parent-ent parent-alias :as child?]]
+    (let [alias (if parent-alias (str table "_" parent-alias) table)
+          [where joins] (make-filter ent alias fields data)]
+      [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
