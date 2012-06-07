@@ -1,4 +1,5 @@
 (ns rip.core
+  "Provides a defaction macro for a more RESTFul definition of request handlers."
   (:use [compojure.core]
         [hiccup.util])
   (:require [clojure.string :as string]))
@@ -30,11 +31,17 @@
   (str (url uri params)))
 
 (defn ->url [url {:keys [path-params query-params]}]
+  "Creates a url based on parameters
+     :query-params for query string params
+     :path-params for common url params"
   (query-url (path-url url path-params) query-params))
 
 (defmacro defaction
   "Define a compojure route with an action vector of the form [method request-handler url-handler],
-   also generate a reverse routing function named 'action-name'->url."
+   also generate a reverse routing function named 'action-name'->url.
+   Usage:
+         (defaction show-invoice \"/inoices/:id\"
+           [:get (fn [{{id :id}:params}] (find-by-id invoices id)) (fn [url] {:show {:href url}})])"
   [name path action]
   (let [method-sym (case (:method (first (eval action)))
                      :get #'GET
@@ -45,7 +52,7 @@
                      :head #'HEAD
                      :patch #'PATCH)]
     `(let [request-handler# (second ~action)
-           url-handler# (nth ~action 3)]
+           url-handler# (nth ~action 2)]
        (defn ~(symbol (str name "->url")) [& params#] (url-handler# (->url ~path (first params#))))
        (def ~name
          (~method-sym ~path request# (request-handler# request#)))

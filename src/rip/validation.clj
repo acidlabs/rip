@@ -1,4 +1,5 @@
 (ns rip.validation
+  "Validation functions for body input and filters for collection queries"
   (:import rip.RipException)
   (:use korma.sql.fns
         korma.core)
@@ -6,7 +7,7 @@
 
 ;; Body validation
 
-(def ^{:private true} messages
+(def ^{:private true} default-messages
   (atom
    {:min-length "The length must be at least %s"
     :max-length "The length must be up to %s"
@@ -18,13 +19,13 @@
     :range "It must be between %s and %s"
     :no-error ""}))
 
-(defn default-messages
+(defn update-messages
   [msgs]
-  (swap! messages (fn [_] msgs)))
+  (swap! default-messages merge msgs))
 
 (defn gen-validation
   [test code & msg-params]
-  {:valid? test :error {:message (apply format (code @messages) msg-params) :code code}})
+  {:valid? test :error {:message (apply format (code @default-messages) msg-params) :code code}})
 
 ;; Collections and strings constraints
 (defn min-length [min] (fn [val] (gen-validation (>= (count val) min) :min-length min)))
@@ -38,7 +39,8 @@
 (defn range-val [min max] (fn [val] (gen-validation (or (>= val min) (<= val max)) :range min max)))
 
 (defn- type-of
-  "Create a function to validate a field type"
+  "Create a function to validate a field type."
+  {:no-doc true}
   [valid-type & [opts]]
   (let [required? (= opts :required)]
     (fn [field val]
@@ -67,6 +69,7 @@
 
   (defn- list-of
     "Create a function to validate the type of the elements in a list field"
+    {:no-doc true}
     [valid-type & [opts]]
     (let [required? (= opts :required)]
       (fn [list]
@@ -82,7 +85,8 @@
             (gen-validation true :no-error)))))))
 
 (defn required
-  "Used for declaring a required field"
+  "Used for declaring a required field. The type can be a class, a function or
+   a vector containing the class or function to describe a list of that type."
   [type & constraints]
   (let [type-valid (if (vector? type)
                      (list-of (first type) :required)
@@ -92,7 +96,8 @@
       [type-valid])))
 
 (defn optional
-  "Used for declaring an optional field"
+  "Used for declaring an optional field. The type can be a class, a function or
+   a vector containing the class or function to describe a list of that type."
   [type & constraints]
   (let [type-valid (if (vector? type)
                      (list-of (first type))
@@ -103,37 +108,46 @@
 
 (defn body-validator
   "Create a map with values:
-    :valid? = If the validation was successful
-    :input  = Entity with posible errors with {:input :error} on invalid fields.
-    :output = Valid entity with "
-  [schema]
-  (fn [val]
-    (let [[valid-output error-output]
-          (reduce
-           (fn [[valid-output error-output] [field-name [type-valid constraints]]]
-             (let [{:keys [valid? input output] :as validation} (type-valid (field-name val))]
-               (if valid?
-                 (if output
-                   (let [errors (reduce
-                                 (fn [errors constraint]
-                                   (let [{:keys [valid? error]} (constraint output)]
-                                     (if valid? errors (cons error errors))))
-                                 []
-                                 constraints)
-                         valid? (empty? errors)]
-                     (if valid?
-                       [(assoc valid-output field-name output) error-output]
-                       [valid-output (assoc error-output field-name {:input input :error errors})]))
-                   [valid-output error-output])
-                 [(assoc valid-output field-name output) (assoc error-output field-name
-                                                                (if (coll? output)
-                                                                  input
-                                                                  (select-keys validation [:input :error])))])))
-           [{} {}]
-           schema)]
-      {:valid? (and (not (empty? valid-output)) (empty? error-output))
-       :input error-output
-       :output valid-output})))
+    - valid? = If the validation was successful
+    - input  = Entity with posible errors with {:input :error} on invalid fields.
+    - output = Valid entity map
+   Usage:
+          (body-validator
+            {:name    (required String (max-length 30))
+             :phones  (required [String] (min-length 1))
+             :books   (optional [(body-validator {:year (required string->date)})])
+             :address (optional (body-validator
+                                  {:city (required String)
+                                   :street (optional String)}))})"
+  [& schemas]
+  (let [schema (apply merge schemas)]
+    (fn [val]
+      (let [[valid-output error-output]
+            (reduce
+             (fn [[valid-output error-output] [field-name [type-valid constraints]]]
+               (let [{:keys [valid? input output] :as validation} (type-valid (field-name val))]
+                 (if valid?
+                   (if output
+                     (let [errors (reduce
+                                   (fn [errors constraint]
+                                     (let [{:keys [valid? error]} (constraint output)]
+                                       (if valid? errors (cons error errors))))
+                                   []
+                                   constraints)
+                           valid? (empty? errors)]
+                       (if valid?
+                         [(assoc valid-output field-name output) error-output]
+                         [valid-output (assoc error-output field-name {:input input :error errors})]))
+                     [valid-output error-output])
+                   [(assoc valid-output field-name output) (assoc error-output field-name
+                                                                  (if (coll? output)
+                                                                    input
+                                                                    (select-keys validation [:input :error])))])))
+             [{} {}]
+             schema)]
+        {:valid? (and (not (empty? valid-output)) (empty? error-output))
+         :input error-output
+         :output valid-output}))))
 
 ;; Filter validation
 
@@ -141,7 +155,7 @@
 
 (def invaid-filter (RipException. {:code :invalid-filter :message "Invalid filter structure"}))
 
-(def query-fns
+(def ^{:private true} query-fns
   {:eq  (fn [field [val]] {field val})
    :neq (fn [field [val]] {field [pred-not= val]})
    :gt  (fn [field [val]] {field [pred-> val]})
@@ -151,8 +165,9 @@
    :rng (fn [field [min max]] (pred-or {field [pred->= min]} {field [pred-<= max]}))
    :lk  (fn [field [val]] {field [pred-like val]})})
 
-(defn make-join
+(defn- make-join
   "Generates an aliased entity and a clause for the join"
+  {:no-doc true}
   [alias ent sub-alias sub-ent]
   (let [rel @((:rel ent) (:table sub-ent))
         field #(last (clojure.string/split (val (first %)) #"\""))
@@ -163,36 +178,41 @@
                     (fn [[alias field]] (keyword (str (name alias) \. field)))
                     [[alias pk] [sub-alias fk]]))]))
 
-(defn field-cond
+(defn- field-cond
   "Generates the clause for a field assuming the input corresponds to a vector"
+  {:no-doc true}
   [field validator pred]
-  (let [[field validator] (cond (vector? validator) validator
-                                (keyword? validator) [validator identity]
-                                :else [field validator])]
-    (reduce
-     pred-or
-     (map (fn [pred]
-            (if (map? pred)
-              (reduce
-               pred-or
-               (map (fn [[f vals]]
-                      ((query-fns f) field
-                       (map validator (if (vector? vals) vals [vals]))))
-                    pred))
-              ((query-fns :eq) field (if (vector? pred) pred [pred]))))
-          pred))))
+  (if (or (vector? validator) (keyword? validator) (fn? validator))
+    (let [[field validator] (cond (vector? validator) validator
+                                  (keyword? validator) [validator identity]
+                                  :else [field validator])]
+      (reduce
+       pred-or
+       (map (fn [pred]
+              (if (map? pred)
+                (reduce
+                 pred-or
+                 (map (fn [[f vals]]
+                        ((query-fns f) field
+                         (map validator (if (vector? vals) vals [vals]))))
+                      pred))
+                ((query-fns :eq) field (if (vector? pred) pred [pred]))))
+            pred)))
+    (throw invaid-filter)))
 
-(defn inner-entity
+(defn- inner-entity
   "Creates an inner entity based on the validator type"
+  {:no-doc true}
   [ent alias validator pred]
   (cond
     (fn? validator) (validator pred ent alias)
     (map? validator) (make-filter ent alias validator pred)
     :else (throw invaid-filter)))
 
-(defn make-filter
+(defn- make-filter
   "Creates a validated pair of values consisting of a where clause, and
    a set of joins, each with the aliased entity, and the join clause"
+  {:no-doc true}
   [ent alias fields data]
   (reduce
    (fn [[where joins :as result] [field validator]]
@@ -213,10 +233,21 @@
    fields))
 
 (defn query-validator
-  "Creates a function given an entity and a map of fields with the schema to be validated.
-   The generated function recives the filter map from the query string"
-  [{table :table :as ent} fields]
+  "Creates a function given a korma entity and maps representing the fields.
+   The generated function recives the filter map from the query string and generates
+   a where clause and a list of joins. The value of the field can be a function,
+   a keyword (to be replaced for the original field keyword), or a vector of the keyword to be
+   replaced and a function.
+   Usage:
+          (query-validator
+            {:name    identity
+             :address {:city [:address_city city-validator]
+                       :street :address_street}
+             :books   (query-validator
+                        {:name identity
+                         :year date-validatior})})"
+  [{table :table :as ent} & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
     (let [alias (if parent-alias (str table "_" parent-alias) table)
-          [where joins] (make-filter ent alias fields data)]
+          [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
