@@ -178,27 +178,29 @@
                     (fn [[alias field]] (keyword (str (name alias) \. field)))
                     [[alias pk] [sub-alias fk]]))]))
 
-(defn- field-cond
-  "Generates the clause for a field assuming the input corresponds to a vector"
-  {:no-doc true}
-  [field validator pred]
-  (if (or (vector? validator) (keyword? validator) (fn? validator))
-    (let [[field validator] (cond (vector? validator) validator
-                                  (keyword? validator) [validator identity]
-                                  :else [field validator])]
-      (reduce
-       pred-or
-       (map (fn [pred]
-              (if (map? pred)
-                (reduce
-                 pred-or
-                 (map (fn [[f vals]]
-                        ((query-fns f) field
-                         (map validator (if (vector? vals) vals [vals]))))
-                      pred))
-                ((query-fns :eq) field (if (vector? pred) pred [pred]))))
-            pred)))
-    (throw invaid-filter)))
+(let [class-validator (fn [class] (fn [x] (if (= (type x) class) x (throw invalid-filter))))]
+  (defn- field-cond
+    "Generates the clause for a field assuming the input corresponds to a vector"
+    {:no-doc true}
+    [field validator pred]
+    (if (or (vector? validator) (keyword? validator) (fn? validator) (class? validator))
+      (let [[field validator] (cond (vector? validator) validator
+                                    (keyword? validator) [validator identity]
+                                    (class? validator) [field class-validator]
+                                    :else [field validator])]
+        (reduce
+         pred-or
+         (map (fn [pred]
+                (if (map? pred)
+                  (reduce
+                   pred-or
+                   (map (fn [[f vals]]
+                          ((query-fns f) field
+                           (map validator (if (vector? vals) vals [vals]))))
+                        pred))
+                  ((query-fns :eq) field (if (vector? pred) pred [pred]))))
+              pred)))
+      (throw invaid-filter))))
 
 (defn- inner-entity
   "Creates an inner entity based on the validator type"

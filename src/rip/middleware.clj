@@ -53,7 +53,7 @@
 (defn parse-xml [s] (val (first (xml->hash-map (xml/parse-str s)))))
 
 (defn wrap-server-error
-  "Wrap a handler such that exceptions are handled with the given error-function"
+  "Wrap a handler such that exceptions are handled with the given error-function."
   [handler error-function]
   (fn [request]
     (try
@@ -62,7 +62,7 @@
         (error-function ex)))))
 
 (defn wrap-allow
-  "Used to check for permissions on resources"
+  "Used to check for permissions on resources."
   [handler allow-fn & [response]]
   (fn [request]
     (if (allow-fn request)
@@ -70,7 +70,7 @@
       (*responses* :forbidden))))
 
 (defn wrap-supported-content-type
-  "Validates the content type from the request"
+  "Validates the content type from the request."
   [handler content-types & [response]]
   (fn [request]
     (if (contains? content-types (:content-type request))
@@ -78,7 +78,7 @@
       (*responses* :unsupported-media-tpye))))
 
 (defn wrap-request-entity-length
-  "Validates the length of the request body"
+  "Validates the length of the request body."
   [handler body-max-length & [response]]
   (fn [request]
     (if (> (count (:body request)) body-max-length)
@@ -87,7 +87,7 @@
 
 (defn wrap-body-parser
   "Wrap the body to a clojure map, only for json and xml inputs.
-   The result map is stored as :input in the :context map of the request"
+   The result map is stored as :input in the :context map of the request."
   [handler xml-tags]
   (fn [request]
     (let [bstr (slurp (:body request))
@@ -101,7 +101,7 @@
 (defn wrap-accept-header
   "Checks the Accept header and validates based on the given supported content types.
    If the the content type is supported then the best type from the content negotiation is
-   stored as :header-content-type in the :context map of the request"
+   stored as :header-content-type in the :context map of the request."
   [handler content-types]
   (fn [{{accept :accept} :headers :as request}]
     (if-let [c-t ((empty? (best-allowed-content-type accept content-types)))]
@@ -109,7 +109,7 @@
       (*responses* :not-acceptable))))
 
 (defn wrap-etag
-  "Compares the etag from the result of calling the given function"
+  "Compares the etag from the result of calling the given function."
   [handler get-etag]
   (fn [request]
     (let [etag (get-in request [:headers "etag"])]
@@ -120,7 +120,7 @@
           (*responses* :precondition-failed))))))
 
 (defn wrap-auth-header
-  "Cecks the Authorization header"
+  "Cecks the Authorization header."
   [handler & [response]]
   (fn [request]
     (if ((:headers request) "authorization")
