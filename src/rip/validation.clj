@@ -43,7 +43,7 @@
   {:no-doc true}
   [valid-type & [opts]]
   (let [required? (= opts :required)]
-    (fn [field val]
+    (fn [val]
       (if val
         (cond (class? valid-type) (assoc (gen-validation (= (type val) valid-type) :type-error)
                                     :output val :input val)
@@ -90,7 +90,7 @@
   [type & constraints]
   (let [type-valid (if (vector? type)
                      (list-of (first type) :required)
-                     (type-of type constraints :required))]
+                     (type-of type :required))]
     (if constraints
       [type-valid constraints]
       [type-valid])))
@@ -101,7 +101,7 @@
   [type & constraints]
   (let [type-valid (if (vector? type)
                      (list-of (first type))
-                     (type-of type constraints))]
+                     (type-of type))]
     (if constraints
       [type-valid constraints]
       [type-valid])))
@@ -139,10 +139,11 @@
                          [(assoc valid-output field-name output) error-output]
                          [valid-output (assoc error-output field-name {:input input :error errors})]))
                      [valid-output error-output])
-                   [(assoc valid-output field-name output) (assoc error-output field-name
-                                                                  (if (coll? output)
-                                                                    input
-                                                                    (select-keys validation [:input :error])))])))
+                   [(assoc valid-output field-name output)
+                    (assoc error-output field-name
+                           (if (coll? output)
+                             input
+                             (select-keys validation [:input :error])))])))
              [{} {}]
              schema)]
         {:valid? (and (not (empty? valid-output)) (empty? error-output))
@@ -153,7 +154,7 @@
 
 (declare make-filter)
 
-(def invaid-filter (RipException. {:code :invalid-filter :message "Invalid filter structure"}))
+(def invalid-filter (RipException. {:code :invalid-filter :message "Invalid filter structure"}))
 
 (def ^{:private true} query-fns
   {:eq  (fn [field [val]] {field val})
@@ -183,8 +184,12 @@
     "Generates the clause for a field assuming the input corresponds to a vector"
     {:no-doc true}
     [field validator pred]
-    (if (or (vector? validator) (keyword? validator) (fn? validator) (class? validator))
-      (let [[field validator] (cond (vector? validator) validator
+    (if (or (keyword? validator) (fn? validator) (class? validator)
+            (and (vector? validator) (keyword? (first validator))
+                 (or (fn? (second validator)) (class? (second validator)))))
+      (let [[field validator] (cond (vector? validator) (if (class? (second validator))
+                                                          [(first validator) (class-validator (second validator))]
+                                                          validator)
                                     (keyword? validator) [validator identity]
                                     (class? validator) [field class-validator]
                                     :else [field validator])]
@@ -200,7 +205,7 @@
                         pred))
                   ((query-fns :eq) field (if (vector? pred) pred [pred]))))
               pred)))
-      (throw invaid-filter))))
+      (throw invalid-filter))))
 
 (defn- inner-entity
   "Creates an inner entity based on the validator type"
@@ -209,7 +214,7 @@
   (cond
     (fn? validator) (validator pred ent alias)
     (map? validator) (make-filter ent alias validator pred)
-    :else (throw invaid-filter)))
+    :else (throw invalid-filter)))
 
 (defn- make-filter
   "Creates a validated pair of values consisting of a where clause, and
@@ -229,7 +234,7 @@
            (map? pred)
            (let [[inner-where inner-joins] (inner-entity ent alias validator pred)]
              [(pred-and where inner-where) (concat joins inner-joins)])
-           :else (throw invaid-filter)))
+           :else (throw invalid-filter)))
        result))
    [nil []]
    fields))
@@ -237,16 +242,17 @@
 (defn query-validator
   "Creates a function given a korma entity and maps representing the fields.
    The generated function recives the filter map from the query string and generates
-   a where clause and a list of joins. The value of the field can be a function,
-   a keyword (to be replaced for the original field keyword), or a vector of the keyword to be
-   replaced and a function.
+   a where clause and a list of joins. The value of the field can be a class, function,
+   keyword (to be replaced for the original field keyword). If a vector is passed,
+   the first value must be a keyword and the second a class or function.
    Usage:
           (query-validator
-            {:name    identity
+            {:name    String
              :address {:city [:address_city city-validator]
-                       :street :address_street}
+                       :street :address_street
+                       :number Integer}
              :books   (query-validator
-                        {:name identity
+                        {:name String
                          :year date-validatior})})"
   [{table :table :as ent} & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
