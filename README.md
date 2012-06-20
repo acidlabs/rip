@@ -49,10 +49,10 @@ Also a function to generate korma queries from clojure maps.
 Example:
 ```clj
 (query-validator
-  {:name    identity
-   :address {:city [:address_city city-validator]
-             :street :address_street}
+  {:name    String
+   :address {:city [:address_city String]
+             :street [:address_street String]}
    :books   (query-validator
-              {:name identity
+              {:name String
                :year date-validatior})})
 ```
