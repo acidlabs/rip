@@ -1,0 +1,59 @@
+(ns rip.db
+  (:import rip.RipException)
+  (:use korma.core
+        korma.db))
+
+(defn wrap-transaction
+  "Excecutes handler inside a transaction and rollbacks if any exception is rised."
+  [handler]
+  (fn [request]
+    (transaction
+      (try
+        (handler request)
+        (catch Exception e
+          (rollback)
+          (throw (RipException. {})))))))
+
+(defn page
+  "Fetches a page from the "
+  [ent page page-size [where-clause joins] order-fields]
+  (select
+      (reduce
+       (fn [query [ent clause]] (join query ent clause))
+       (reduce
+        (fn [query [field ord]] (apply order query field ord))
+        (-> (select* ent)
+            (where where-clause)
+            (limit page)
+            (offset (* page page-size)))
+        order-fields)
+       joins)))
+
+(defn- get-fk
+  [ent1 ent2]
+  (keyword (last (clojure.string/split (val (first @((:rel ent1) (:name ent2)))) #"\""))))
+
+(defn insert-with-refs
+  "Inserts a single value with outer and inner references."
+  [ent value outer-refs & [inner-refs]]
+  (let [new-value (apply dissoc value (concat (keys outer-refs) (keys inner-refs)))
+        new-value (if inner-refs
+                    (reduce
+                     (fn [value [k v]]
+                       (assoc v k v))
+                     value
+                     (map (fn [k ref-ent]
+                            (let [pk ((:pk ref-ent) (insert (values [(k value)])))]
+                              (get-fk ent ref-ent)))
+                          inner-refs))
+                    new-value)
+        new-pk ((:pk ent) (insert ent (values [new-value])))]
+    (doseq [[k ref-ent] outer-refs]
+      (let [fk (get-fk ent ref-ent)]
+        (insert ref-ent
+          (values (map (fn [val] (assoc val fk new-pk)) (value k))))))
+    new-pk))
+
+(defn with-schema [{tablename :table :as ent} schema]
+  "Creates a entity with proper table name in a postgres schema"
+  (table ent (keyword (str (name schema) "." tablename))))

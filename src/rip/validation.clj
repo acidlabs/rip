@@ -5,6 +5,8 @@
         korma.core)
   (:require [clojure.string :as st]))
 
+(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x#) x#))
+
 ;; Body validation
 
 (def ^{:private true} default-messages
@@ -191,7 +193,7 @@
                                                           [(first validator) (class-validator (second validator))]
                                                           validator)
                                     (keyword? validator) [validator identity]
-                                    (class? validator) [field class-validator]
+                                    (class? validator) [field (class-validator validator)]
                                     :else [field validator])]
         (reduce
          pred-or
@@ -246,12 +248,11 @@
    keyword (to be replaced for the original field keyword). If a vector is passed,
    the first value must be a keyword and the second a class or function.
    Usage:
-          (query-validator
+          (query-validator user
             {:name    String
-             :address {:city [:address_city city-validator]
-                       :street :address_street
-                       :number Integer}
-             :books   (query-validator
+             :address {:city [:address_city String]
+                       :street [:address_street String]}
+             :books   (query-validator books
                         {:name String
                          :year date-validatior})})"
   [{table :table :as ent} & fields]
@@ -259,3 +260,27 @@
     (let [alias (if parent-alias (str table "_" parent-alias) table)
           [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
+
+(declare libro)
+
+(defentity persona
+  (has-many libro))
+
+(defentity libro)
+
+(try (sql-only
+       (select (let [[w j] ((query-validator persona
+                                             {:a Long
+                                              :b {:d [:d_1 Long]}
+                                              :c (query-validator libro
+                                                                  {:e String})})
+                            {:a [234 213 {:lt 23}]
+                             :b {:d [234 213 {:lt 3223}]}
+                             :c {:e [{:lk "dfsdf"}]}})]
+                 (reduce
+                  (fn [q [e c]]
+                    (join q e c))
+                  (-> (select* persona)
+                      (where w))
+                  j))))
+     (catch RipException e e))
