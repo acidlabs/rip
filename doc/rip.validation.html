@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html><head><link href="css/default.css" rel="stylesheet" type="text/css"><script src="js/jquery.min.js" type="text/javascript"></script><script src="js/page_effects.js" type="text/javascript"></script><title>rip.validation documentation</title></head><body><div id="header"><h1><a href="index.html">Rip 0.0.5 API documentation</a></h1></div><div class="sidebar" id="namespaces"><h3><span>Namespaces</span></h3><ul><li><a href="rip.RipException.html"><span>rip.RipException</span></a></li><li><a href="rip.actions.html"><span>rip.actions</span></a></li><li><a href="rip.core.html"><span>rip.core</span></a></li><li><a href="rip.middleware.html"><span>rip.middleware</span></a></li><li class="current"><a href="rip.validation.html"><span>rip.validation</span></a></li></ul></div><div class="sidebar" id="vars"><h3>Public Vars</h3><ul><li><a href="rip.validation.html#var-body-validator"><span>body-validator</span></a></li><li><a href="rip.validation.html#var-optional"><span>optional</span></a></li><li><a href="rip.validation.html#var-query-validator"><span>query-validator</span></a></li><li><a href="rip.validation.html#var-required"><span>required</span></a></li></ul></div><div class="namespace-docs" id="content"><h2>rip.validation documentation</h2><pre class="doc">Validation functions for body input and filters for collection queries
+<html><head><link href="css/default.css" rel="stylesheet" type="text/css"><script src="js/jquery.min.js" type="text/javascript"></script><script src="js/page_effects.js" type="text/javascript"></script><title>rip.validation documentation</title></head><body><div id="header"><h1><a href="index.html">Rip 0.0.6 API documentation</a></h1></div><div class="sidebar" id="namespaces"><h3><span>Namespaces</span></h3><ul><li><a href="rip.RipException.html"><span>rip.RipException</span></a></li><li><a href="rip.actions.html"><span>rip.actions</span></a></li><li><a href="rip.core.html"><span>rip.core</span></a></li><li><a href="rip.db.html"><span>rip.db</span></a></li><li><a href="rip.middleware.html"><span>rip.middleware</span></a></li><li class="current"><a href="rip.validation.html"><span>rip.validation</span></a></li></ul></div><div class="sidebar" id="vars"><h3>Public Vars</h3><ul><li><a href="rip.validation.html#var-body-validator"><span>body-validator</span></a></li><li><a href="rip.validation.html#var-optional"><span>optional</span></a></li><li><a href="rip.validation.html#var-query-validator"><span>query-validator</span></a></li><li><a href="rip.validation.html#var-required"><span>required</span></a></li></ul></div><div class="namespace-docs" id="content"><h2>rip.validation documentation</h2><pre class="doc">Validation functions for body input and filters for collection queries
 </pre><div class="public" id="var-body-validator"><h3>body-validator</h3><div class="usage"><code>(body-validator &amp; schemas)</code></div><pre class="doc">Create a map with values:
  - valid? = If the validation was successful
  - input  = Entity with posible errors with {:input :error} on invalid fields.
@@ -14,15 +14,15 @@ Usage:
                                 :street (optional String)}))})</pre></div><div class="public" id="var-optional"><h3>optional</h3><div class="usage"><code>(optional type &amp; constraints)</code></div><pre class="doc">Used for declaring an optional field. The type can be a class, a function or
 a vector containing the class or function to describe a list of that type.</pre></div><div class="public" id="var-query-validator"><h3>query-validator</h3><div class="usage"><code>(query-validator {table :table, :as ent} &amp; fields)</code></div><pre class="doc">Creates a function given a korma entity and maps representing the fields.
 The generated function recives the filter map from the query string and generates
-a where clause and a list of joins. The value of the field can be a function,
-a keyword (to be replaced for the original field keyword), or a vector of the keyword to be
-replaced and a function.
+a where clause and a list of joins. The value of the field can be a class, function,
+keyword (to be replaced for the original field keyword). If a vector is passed,
+the first value must be a keyword and the second a class or function.
 Usage:
-       (query-validator
-         {:name    identity
-          :address {:city [:address_city city-validator]
-                    :street :address_street}
-          :books   (query-validator
-                     {:name identity
+       (query-validator user
+         {:name    String
+          :address {:city [:address_city String]
+                    :street [:address_street String]}
+          :books   (query-validator books
+                     {:name String
                       :year date-validatior})})</pre></div><div class="public" id="var-required"><h3>required</h3><div class="usage"><code>(required type &amp; constraints)</code></div><pre class="doc">Used for declaring a required field. The type can be a class, a function or
 a vector containing the class or function to describe a list of that type.</pre></div></div></body></html>

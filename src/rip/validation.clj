@@ -181,7 +181,7 @@
                     (fn [[alias field]] (keyword (str (name alias) \. field)))
                     [[alias pk] [sub-alias fk]]))]))
 
-(let [class-validator (fn [class] (fn [x] (if (= (type x) class) x (throw invalid-filter))))]
+(let [class-validator (fn [c] (fn [x] (if (= (type x) c) x (throw invalid-filter))))]
   (defn- field-cond
     "Generates the clause for a field assuming the input corresponds to a vector"
     {:no-doc true}
@@ -205,7 +205,7 @@
                           ((query-fns f) field
                            (map validator (if (vector? vals) vals [vals]))))
                         pred))
-                  ((query-fns :eq) field (if (vector? pred) pred [pred]))))
+                  ((query-fns :eq) field (map validator [pred]))))
               pred)))
       (throw invalid-filter))))
 
@@ -260,27 +260,3 @@
     (let [alias (if parent-alias (str table "_" parent-alias) table)
           [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
-
-(declare libro)
-
-(defentity persona
-  (has-many libro))
-
-(defentity libro)
-
-(try (sql-only
-       (select (let [[w j] ((query-validator persona
-                                             {:a Long
-                                              :b {:d [:d_1 Long]}
-                                              :c (query-validator libro
-                                                                  {:e String})})
-                            {:a [234 213 {:lt 23}]
-                             :b {:d [234 213 {:lt 3223}]}
-                             :c {:e [{:lk "dfsdf"}]}})]
-                 (reduce
-                  (fn [q [e c]]
-                    (join q e c))
-                  (-> (select* persona)
-                      (where w))
-                  j))))
-     (catch RipException e e))

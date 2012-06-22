@@ -3,6 +3,8 @@
   (:use korma.core
         korma.db))
 
+(def transaction-exception (RipException. {:code :transaction-exception :message "Transaction error"}))
+
 (defn wrap-transaction
   "Excecutes handler inside a transaction and rollbacks if any exception is rised."
   [handler]
@@ -12,11 +14,11 @@
         (handler request)
         (catch Exception e
           (rollback)
-          (throw (RipException. {})))))))
+          (throw transaction-exception))))))
 
 (defn page
-  "Fetches a page from the "
-  [ent page page-size [where-clause joins] order-fields]
+  "Fetches a page from the given entity"
+  [ent page page-size order-fields [where-clause joins]]
   (select
       (reduce
        (fn [query [ent clause]] (join query ent clause))
@@ -30,6 +32,7 @@
        joins)))
 
 (defn- get-fk
+  {:no-doc true}
   [ent1 ent2]
   (keyword (last (clojure.string/split (val (first @((:rel ent1) (:name ent2)))) #"\""))))
 

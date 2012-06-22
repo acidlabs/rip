@@ -43,7 +43,7 @@
          (defaction show-invoice \"/inoices/:id\"
            [:get (fn [{{id :id}:params}] (find-by-id invoices id)) (fn [url] {:show {:href url}})])"
   [name path action]
-  (let [method-sym (case (:method (first (eval action)))
+  (let [method-sym (case (first (eval action))
                      :get #'GET
                      :post #'POST
                      :put #'PUT

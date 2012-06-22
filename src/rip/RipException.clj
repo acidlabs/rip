@@ -3,7 +3,7 @@
    :state state
    :init init
    :implements   [clojure.lang.IDeref]
-   :constructors {[clojure.lang.PersistentHashMap] []}
+   :constructors {[clojure.lang.APersistentMap] []}
    :extends java.lang.Exception))
 
 (defn -init

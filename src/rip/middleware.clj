@@ -102,7 +102,7 @@
   "Checks the Accept header and validates based on the given supported content types.
    If the the content type is supported then the best type from the content negotiation is
    stored as :header-content-type in the :context map of the request."
-  [handler content-types]
+  [handler content-types default-type]
   (fn [{{accept :accept} :headers :as request}]
     (if-let [c-t ((empty? (best-allowed-content-type accept content-types)))]
       (handler (assoc-in request [:context :header-content-type] c-t))
