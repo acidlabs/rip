@@ -1,4 +1,4 @@
-(defproject rip "0.0.6"
+(defproject rip "0.0.7"
   :description "REST in Peace, an unopinionated REST framework"
   :dependencies [[org.clojure/clojure "1.3.0"]
                  [compojure "1.1.0"]

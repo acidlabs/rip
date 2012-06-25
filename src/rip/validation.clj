@@ -6,10 +6,6 @@
         rip.db)
   (:require [clojure.string :as st]))
 
-
-(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x# "type =" (type x#)) x#))
-
-
 (def ^{:dynamic true} *schema* nil)
 
 ;; Body validation
