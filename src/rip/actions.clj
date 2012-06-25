@@ -8,13 +8,12 @@
    & [{:keys [title responses]}]]
   [:get
    (binding [*responses* (merge *responses* responses)]
-     (fn [request]
-       (-> entity-handler
-           (wrap-etag get-etag)
-           entity-fetch-handler
-           (wrap-accept-header accepted-types)
-           (wrap-allow allow-fn)
-           auth-handler) request))
+     (-> entity-handler
+         (wrap-etag get-etag)
+         entity-fetch-handler
+         (wrap-accept-header accepted-types)
+         (wrap-allow allow-fn)
+         auth-handler))
    (fn [url]
      {:show (merge {:href url} (when title {:title title}))})])
 
@@ -24,12 +23,11 @@
    & [{:keys [title responses]}]]
   [:get
    (binding [*responses* (merge *responses* responses)]
-     (fn [request]
-       (-> collection-handler
-           collection-fetch-handler
-           (wrap-accept-header accepted-types)
-           (wrap-allow allow-fn)
-           auth-handler) request))
+     (-> collection-handler
+         collection-fetch-handler
+         (wrap-accept-header accepted-types)
+         (wrap-allow allow-fn)
+         auth-handler))
    (fn [url]
      {:index (merge {:href url} (when title {:title title}))})])
 
@@ -39,12 +37,11 @@
    & [{:keys [title responses]}]]
   [:post
    (binding [*responses* (merge *responses* responses)]
-     (fn [request]
-       (-> entity-handler
-           entity-store-handler
-           (wrap-accept-header accepted-types)
-           (wrap-supported-content-type supported-types)
-           (wrap-allow allow-fn)
-           auth-handler) request))
+     (-> entity-handler
+         entity-store-handler
+         (wrap-accept-header accepted-types)
+         (wrap-supported-content-type supported-types)
+         (wrap-allow allow-fn)
+         auth-handler))
    (fn [url]
      {:add (merge {:href url} (when title {:title title}))})])

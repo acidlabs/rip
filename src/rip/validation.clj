@@ -2,10 +2,15 @@
   "Validation functions for body input and filters for collection queries"
   (:import rip.RipException)
   (:use korma.sql.fns
-        korma.core)
+        korma.core
+        rip.db)
   (:require [clojure.string :as st]))
 
-(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x#) x#))
+
+(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x# "type =" (type x#)) x#))
+
+
+(def ^{:dynamic true} *schema* nil)
 
 ;; Body validation
 
@@ -172,7 +177,7 @@
   "Generates an aliased entity and a clause for the join"
   {:no-doc true}
   [alias ent sub-alias sub-ent]
-  (let [rel @((:rel ent) (:table sub-ent))
+  (let [rel @((:rel ent) (:name sub-ent))
         field #(last (clojure.string/split (val (first %)) #"\""))
         pk (field (:pk rel))
         fk (field (:fk rel))]
@@ -241,6 +246,17 @@
    [nil []]
    fields))
 
+(defn set-schema [{tablename :table :as ent} schema]
+  "Creates a entity with proper table name in a postgres schema"
+  (if schema (table ent (keyword (str (name schema) "." tablename))) ent))
+
+(defmacro with-schema
+  "Binds postgres schema for tables in this scope.
+   Used for query-validation to create correct joins."
+  [schema & body]
+  `(binding [*schema* ~schema]
+     ~@body))
+
 (defn query-validator
   "Creates a function given a korma entity and maps representing the fields.
    The generated function recives the filter map from the query string and generates
@@ -255,8 +271,9 @@
              :books   (query-validator books
                         {:name String
                          :year date-validatior})})"
-  [{table :table :as ent} & fields]
+  [ent & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
-    (let [alias (if parent-alias (str table "_" parent-alias) table)
+    (let [ent (set-schema ent *schema*)
+          alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
           [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))

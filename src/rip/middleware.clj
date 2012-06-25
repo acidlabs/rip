@@ -3,9 +3,10 @@
    Some wrappers recives an optional response to be merged with the default error response."
   (:require [cheshire.core :as json]
             [clojure.data.xml :as xml])
-  (:use com.twinql.clojure.conneg))
+  (:use com.twinql.clojure.conneg
+        rip.validation))
 
-(def ^{:dynamic true :doc "Default xml serialization tags"} *xml-tags* {:list :list})
+(def ^{:dynamic true :doc "Default xml serialization tags"} *xml-tags* {:list :list :item :item})
 
 (def ^{:dynamic true :doc "Default error responses"} *responses*
   {:forbidden {:status 403 :body "Forbidden."}
@@ -49,6 +50,22 @@
            (if (number? val)
              val
              cont)))})
+
+(defn map->xml
+  [tag cont]
+  (apply
+   xml/element
+   (concat [tag nil]
+           (if (coll? cont)
+             (if (map? cont)
+               (map #(apply map->xml %) cont)
+               [(apply xml/element
+                       (concat [(*xml-tags* :list) nil]
+                               (map (fn [val] (map->xml (*xml-tags* :item) val)) cont)))])
+             [(str cont)]))))
+
+(defn gen-xml [tag value]
+  (xml/emit-str (map->xml tag value)))
 
 (defn parse-xml [s] (val (first (xml->hash-map (xml/parse-str s)))))
 

@@ -56,7 +56,3 @@
         (insert ref-ent
           (values (map (fn [val] (assoc val fk new-pk)) (value k))))))
     new-pk))
-
-(defn with-schema [{tablename :table :as ent} schema]
-  "Creates a entity with proper table name in a postgres schema"
-  (table ent (keyword (str (name schema) "." tablename))))
