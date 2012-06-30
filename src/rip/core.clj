@@ -98,6 +98,9 @@
 
 (ss {:uri "/a/c" :request-method :get :query-params "asd=223"})
 
+(ss-asd->url)
+             
+
 (defroutes caca
   (GET "/" req req))
 
