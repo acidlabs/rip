@@ -36,6 +36,8 @@
      :route-params for route url params"
   (query-url (path-url url route-params) query-params))
 
+(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x# "type =" (type x#)) x#))
+
 (defn make-action
   [method path request-handler]
   (let [meth (case method
@@ -54,11 +56,12 @@
    Usage:
          (defaction show-invoice \"/inoices/:id\"
            [:get (fn [{{id :id}:params}] (find-by-id invoices id)) (fn [url] {:show {:href url}})])"
-  [name path [method request-handler url-handler]]
-  `(do
-     (defn ~(symbol (str name "->url")) [& params#] (~url-handler (->url ~path (first params#))))
-     (def ~name ~(make-action method path request-handler))
-     ~name))
+  [name path action]
+  (let [[method request-handler url-handler] (eval action)]
+    `(do
+       (defn ~(symbol (str name "->url")) [& params#] (~url-handler (->url ~path (first params#))))
+       (def ~name ~(make-action method path request-handler))
+       ~name)))
 
 (defmacro defresource
   "Define a compojure route like defroute and a reverse routing function for each given action.
@@ -68,11 +71,38 @@
            books  [\"/books\" [:get identity identity]])"
   [name path & actions]
   `(do
-     ~(cons #'defroutes (cons name (map (fn [[k [action-path [method request-handler]]]]
-                                          (make-action method (str path action-path) request-handler))
-                                        (apply hash-map actions))))
-     ~@(for [[k [action-path [method request-handler url-handler]]] (apply hash-map actions)]
-         `(do
-            (defn ~(symbol (str name "-" k "->url"))
-              [& params#]
-              (~url-handler (->url ~(str path action-path) (first params#))))))))
+     ~(cons #'defroutes
+            (cons name
+                  (map (fn [[_ x]]
+                         (let [[action-path [method request-handler]] (eval x)]
+                           (make-action method (str path action-path) request-handler)))
+                       (apply hash-map actions))))
+     ~@(for [[k x] (apply hash-map actions)]
+         (let [[action-path [method request-handler url-handler]] (eval x)]
+           `(do
+              (defn ~(symbol (str name "-" k "->url"))
+                [& params#]
+                (~url-handler (->url ~(str path action-path) (first params#)))))))
+     ~name))
+
+(defn caca
+  []
+  [:get identity identity])
+
+((defaction asdf "/asd" (caca))  {:uri "/" :request-method :get :query-params "asd=223"})
+
+((defresource ss "/a"
+   wea ["/b" (caca)]
+   aaaaaa ["/c" [:get identity identity]])
+ {:uri "/a/c" :request-method :get :query-params "asd=223"})
+
+(ss {:uri "/a/c" :request-method :get :query-params "asd=223"})
+
+(defroutes caca
+  (GET "/" req req))
+
+(use 'compojure.handler)
+
+((-> caca
+     api)
+ {:uri "/" :request-method :get :query-params "asd=223"})
