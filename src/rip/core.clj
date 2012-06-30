@@ -36,8 +36,6 @@
      :route-params for route url params"
   (query-url (path-url url route-params) query-params))
 
-(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x# "type =" (type x#)) x#))
-
 (defn make-action
   [method path request-handler]
   (let [meth (case method
@@ -84,28 +82,3 @@
                 [& params#]
                 (~url-handler (->url ~(str path action-path) (first params#)))))))
      ~name))
-
-(defn caca
-  []
-  [:get identity identity])
-
-((defaction asdf "/asd" (caca))  {:uri "/" :request-method :get :query-params "asd=223"})
-
-((defresource ss "/a"
-   wea ["/b" (caca)]
-   aaaaaa ["/c" [:get identity identity]])
- {:uri "/a/c" :request-method :get :query-params "asd=223"})
-
-(ss {:uri "/a/c" :request-method :get :query-params "asd=223"})
-
-(ss-asd->url)
-             
-
-(defroutes caca
-  (GET "/" req req))
-
-(use 'compojure.handler)
-
-((-> caca
-     api)
- {:uri "/" :request-method :get :query-params "asd=223"})
