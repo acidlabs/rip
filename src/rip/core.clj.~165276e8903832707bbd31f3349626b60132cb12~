@@ -1,7 +1,7 @@
 (ns rip.core
   "Provides a defaction macro for a more RESTFul definition of request handlers."
-  (:use compojure.core
-        hiccup.util)
+  (:use [compojure.core]
+        [hiccup.util])
   (:require [clojure.string :as string]))
 
 (defn- throwf [msg & args]
@@ -30,22 +30,11 @@
 (defn- query-url [uri params]
   (str (url uri params)))
 
-(defn ->url [url {:keys [route-params query-params]}]
+(defn ->url [url {:keys [path-params query-params]}]
   "Creates a url based on parameters
      :query-params for query string params
-     :route-params for route url params"
-  (query-url (path-url url route-params) query-params))
-
-(defn make-method
-  [meth]
-  (case meth
-    :get #'GET
-    :post #'POST
-    :put #'PUT
-    :delete #'DELETE
-    :options #'OPTIONS
-    :head #'HEAD
-    :patch #'PATCH))
+     :path-params for common url params"
+  (query-url (path-url url path-params) query-params))
 
 (defmacro defaction
   "Define a compojure route with an action vector of the form [method request-handler url-handler],
@@ -54,32 +43,17 @@
          (defaction show-invoice \"/inoices/:id\"
            [:get (fn [{{id :id}:params}] (find-by-id invoices id)) (fn [url] {:show {:href url}})])"
   [name path action]
-  (let [method-sym (make-method (first (eval action)))]
+  (let [method-sym (case (:method (first (eval action)))
+                     :get #'GET
+                     :post #'POST
+                     :put #'PUT
+                     :delete #'DELETE
+                     :options #'OPTIONS
+                     :head #'HEAD
+                     :patch #'PATCH)]
     `(let [request-handler# (second ~action)
            url-handler# (nth ~action 2)]
        (defn ~(symbol (str name "->url")) [& params#] (url-handler# (->url ~path (first params#))))
        (def ~name
          (~method-sym ~path request# (request-handler# request#)))
        ~name)))
-
-(defmacro defresource
-  "Define a compojure route like defroute and a reverse routing function for each given action.
-   Usage:
-         (defresource user \"users/:id\"
-           show   [\"\" [:get identity identity]]
-           books  [\"/books\" [:get identity identity]])"
-  [name path & actions]
-  (for [[k x] (apply hash-map actions)]
-    (let [[action-path [method request-handler url-handler]] (eval x)]
-      `(let [url-handler# (last (nth ~x 1))]
-         (defn ~(symbol (str name "-" k "->url"))
-           [& params#]
-           (url-handler# (->url ~(str path action-path) (first params#)))))))
-  (cons #'defroutes
-        (cons name
-              (map (fn [[_ x]]
-                     (let [[action-path [method]] (eval x)
-                           method-sym (make-method method)]
-                       `(let [request-handler# (nth (nth ~x 1) 1)]
-                          (~method-sym ~(str path action-path) req# (request-handler# req#)))))
-                   (apply hash-map actions)))))
