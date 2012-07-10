@@ -10,22 +10,12 @@
 
 (def ^{:dynamic true :doc "Default error responses"} *responses*
   {:forbidden {:status 403 :body "Forbidden."}
-   :unsupported-media-tpye {:statu 415 :body "Unsupported Media Type"}
+   :unsupported-media-tpye {:status 415 :body "Unsupported Media Type"}
    :request-entity-too-long {:status 413 :body "Request entity too large."}
    :not-acceptable {:status 406 :body "Not Acceptable"}
    :precondition-failed {:status 412 :body "Precondition Failed."}
    :unauthorized {:status 401 :body "Unauthorized."}
    :not-modified {:status 304 :body "Not Modified."}})
-
-(defn- json-request?
-  [req]
-  (if-let [#^String type (get-in req [:headers "content-type"])]
-    (.startsWith type "application/json")))
-
-(defn- xml-request?
-  [req]
-  (if-let [#^String type (get-in req [:headers "content-type"])]
-    (.startsWith type "application/xml")))
 
 (defn xml->hash-map
   "Transforms clojure.data.xml.Element to clojure maps.
@@ -90,7 +80,7 @@
   "Validates the content type from the request."
   [handler content-types & [response]]
   (fn [request]
-    (if (contains? content-types (get-in request [:headers "content-type"]))
+    (if (contains? content-types (best-allowed-content-type (get-in request [:headers "content-type"]) content-types))
       (handler request)
       (*responses* :unsupported-media-tpye))))
 
@@ -108,10 +98,10 @@
   [handler xml-tags]
   (fn [request]
     (let [bstr (slurp (:body request))
-          input (cond
-                  (json-request? request) (json/parse-string bstr true)
-                  (xml-request? request) (binding [*xml-tags* (merge xml-tags *xml-tags*)]
-                                           (parse-xml bstr))
+          input (case (second (best-allowed-content-type (get-in request [:headers "content-type"]) "aplication/*"))
+                  "json" (json/parse-string bstr true)
+                  "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
+                           (parse-xml bstr))
                   :else bstr)]
       (handler (assoc-in request [:context :input] input)))))
 
