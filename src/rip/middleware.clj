@@ -19,12 +19,12 @@
 
 (defn- json-request?
   [req]
-  (if-let [#^String type (get-in req [:headers "Content-Type"])]
+  (if-let [#^String type (get-in req [:headers "content-type"])]
     (.startsWith type "application/json")))
 
 (defn- xml-request?
   [req]
-  (if-let [#^String type (get-in req [:headers "Content-Type"])]
+  (if-let [#^String type (get-in req [:headers "content-type"])]
     (.startsWith type "application/xml")))
 
 (defn xml->hash-map
