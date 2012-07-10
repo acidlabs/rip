@@ -90,7 +90,7 @@
   "Validates the content type from the request."
   [handler content-types & [response]]
   (fn [request]
-    (if (contains? content-types (:content-type request))
+    (if (contains? content-types (get-in req [:headers "content-type"]))
       (handler request)
       (*responses* :unsupported-media-tpye))))
 
