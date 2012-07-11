@@ -80,7 +80,7 @@
   "Validates the content type from the request."
   [handler content-types & [response]]
   (fn [request]
-    (if (contains? content-types (best-allowed-content-type (get-in request [:headers "content-type"]) content-types))
+    (if (best-allowed-content-type (get-in request [:headers "content-type"]) content-types)
       (handler request)
       (*responses* :unsupported-media-tpye))))
 
@@ -98,13 +98,12 @@
   [handler xml-tags]
   (fn [request]
     (let [bstr (slurp (:body request))
-          input (case (second (best-allowed-content-type (get-in request [:headers "content-type"]) "aplication/*"))
+          input (case (second (best-allowed-content-type (get-in request [:headers "content-type"]) #{"application/*"}))
                   "json" (json/parse-string bstr true)
                   "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
                            (parse-xml bstr))
                   :else bstr)]
       (handler (assoc-in request [:context :input] input)))))
-
 (defn wrap-accept-header
   "Checks the Accept header and validates based on the given supported content types.
    If the the content type is supported then the best type from the content negotiation is
