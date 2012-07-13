@@ -39,20 +39,20 @@
 (defn insert-with-refs
   "Inserts a single value with outer and inner references."
   [ent value outer-refs & [inner-refs]]
-  (let [new-value (apply dissoc value (concat (keys outer-refs) (keys inner-refs)))
+  (let [new-value* (apply dissoc value (concat (keys outer-refs) (keys inner-refs)))
         new-value (if inner-refs
                     (reduce
                      (fn [value [k v]]
-                       (assoc v k v))
-                     value
-                     (map (fn [k ref-ent]
-                            (let [pk ((:pk ref-ent) (insert (values [(k value)])))]
-                              (get-fk ent ref-ent)))
+                       (assoc value k v))
+                     new-value*
+                     (map (fn [[k ref-ent]]
+                            (let [pk ((:pk ref-ent) (insert ref-ent (values (k value))))]
+                              [(get-fk ent ref-ent) pk]))
                           inner-refs))
-                    new-value)
-        new-pk ((:pk ent) (insert ent (values [new-value])))]
+                    new-value*)
+        new-pk ((:pk ent) (insert ent (values new-value)))]
     (doseq [[k ref-ent] outer-refs]
       (let [fk (get-fk ent ref-ent)]
         (insert ref-ent
-          (values (map (fn [val] (assoc val fk new-pk)) (value k))))))
+                (values (map (fn [val] (assoc val fk new-pk)) (value k))))))
     new-pk))
