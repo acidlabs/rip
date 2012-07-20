@@ -34,7 +34,7 @@
 (defn- get-fk
   {:no-doc true}
   [ent1 ent2]
-  (keyword (last (clojure.string/split (val (first @((:rel ent1) (:name ent2)))) #"\""))))
+  (keyword (last (clojure.string/split (val (first (:fk (get-rel ent1 ent2)))) #"\""))))
 
 (defn insert-with-refs
   "Inserts a single value with outer and inner references."
@@ -50,6 +50,7 @@
                               [(get-fk ent ref-ent) pk]))
                           inner-refs))
                     new-value*)
+        asdasd (println new-value)
         new-pk ((:pk ent) (insert ent (values new-value)))]
     (doseq [[k ref-ent] outer-refs]
       (let [fk (get-fk ent ref-ent)]
