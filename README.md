@@ -1,4 +1,4 @@
-rip
+RIP
 ===
 
 REST in Peace is a library for RESTful APIs built on top of compojure with some korma utilities.
