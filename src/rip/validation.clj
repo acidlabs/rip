@@ -127,8 +127,9 @@
     (fn [val]
       (let [[valid-output error-output]
             (reduce
-             (fn [[valid-output error-output] [field-name [type-valid constraints]]]
-               (let [{:keys [valid? input output] :as validation} (type-valid (field-name val))]
+             (fn [[valid-output error-output] [field-name validator]]
+               (let [[type-valid constraints] (if (fn? validator) [validator] validator)
+                     {:keys [valid? input output] :as validation} (type-valid (field-name val))]
                  (if valid?
                    (if output
                      (let [errors (reduce
