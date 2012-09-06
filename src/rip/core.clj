@@ -4,6 +4,83 @@
         hiccup.util)
   (:require [clojure.string :as string]))
 
+(defrecord Route [method path route-handler url-handler])
+
+(defrecord Member [method res-name path sufix route-handler url-handler])
+
+(defrecord Collection [method res-name path sufix route-handler url-handler])
+
+(defrecord Resources [res-name path id resources])
+
+(defn route
+  "Creates a route object"
+  [method path route-handler & [url-handler]]
+  (Route. method path route-handler (if url-handler url-handler identity)))
+
+(defn gen-resources
+  [{:keys [res-name resources] :as res} & [parent-path]]
+  (let [path        (if parent-path (str parent-path "/" (name res-name)) (str "/" (name res-name)))
+        id          (if parent-path (str ":" (name res-name) "-id") ":id")
+        member-path (str path "/" id)]
+    (assoc res
+      :path path
+      :id id
+      :resources
+      (reduce (fn [resources resource]
+                (assoc resources (:res-name resource)
+                       (condp #(= (type %2) %1) resource
+                         Member     (assoc resource :path
+                                           (str path "/" id (:sufix resource)))
+                         Collection (assoc resource :path (str path (:sufix resource)))
+                         Resources (gen-resources resource member-path)
+                         (throw (Exception. "A resource must be either of type Member, Collection or Resources")))))
+              {}
+              (if (map? resources) (vals resources) resources)))))
+
+(defn resources
+  "Similar to rails resources, provides a way to define routes based on RESTful like actions.
+   Receives a name and a series of actions defined through functions memb and/or coll.
+   Usage:
+          (resources :users
+                     (memb :show :get identity)
+                     (coll :index :get identity))"
+  [res-name & res]
+  (gen-resources (Resources. res-name nil nil res)))
+
+(defn memb
+  "Creates a route of a member to be passed to a resources definition.
+   Usage:
+          (resources :users (memb :show :get identity))
+           => /users/:id "
+  [res-name method route-handler & [{:keys [sufix url-handler]}]]
+  (Member. method res-name "" sufix route-handler (if url-handler url-handler identity)))
+
+(defn coll
+  "Creates a route to the collection of a resources definition.
+   Usage:
+          (resources :users (memb :show :get identity))
+           => /users/:id "
+  [res-name method route-handler & [{:keys [sufix url-handler]}]]
+  (Collection. method res-name "" sufix route-handler (if url-handler url-handler identity)))
+
+(defmulti ->handler "Generates the ring handler function for the passed resource" type)
+
+(defmethod ->handler Resources
+  [{:keys [resources]}]
+  (apply routes (map ->handler (vals resources))))
+
+(defmethod ->handler Collection
+  [{:keys [method path route-handler]}]
+  (make-route method path route-handler))
+
+(defmethod ->handler Member
+  [{:keys [method path route-handler]}]
+  (make-route method path route-handler))
+
+(defmethod ->handler Route
+  [{:keys [method path route-handler]}]
+  (make-route method path route-handler))
+
 (defn- throwf [msg & args]
   (throw (Exception. (apply format msg args))))
 
@@ -30,56 +107,18 @@
 (defn- query-url [uri params]
   (str (url uri params)))
 
-(defn ->url [url {:keys [route-params query-params]}]
-  "Creates a url based on parameters
-     :query-params for query string params
-     :route-params for route url params"
-  (query-url (path-url url route-params) query-params))
+(defn ->url
+  "Returns the url belonging to the passed resource"
+  [resource & [{:keys [route-params query-params]}]]
+  (query-url
+   (path-url (:path (if (vector? resource)
+                      (reduce (fn [x1 x2] (x2 (:resources x1)))
+                              resource)
+                      resource))
+             route-params) query-params))
 
-(defn make-method
-  [meth]
-  (case meth
-    :get #'GET
-    :post #'POST
-    :put #'PUT
-    :delete #'DELETE
-    :options #'OPTIONS
-    :head #'HEAD
-    :patch #'PATCH))
-
-(defmacro defaction
-  "Define a compojure route with an action vector of the form [method request-handler url-handler],
-   also generate a reverse routing function named 'action-name'->url.
-   Usage:
-         (defaction show-invoice \"/inoices/:id\"
-           [:get (fn [{{id :id}:params}] (find-by-id invoices id)) (fn [url] {:show {:href url}})])"
-  [name path action]
-  (let [method-sym (make-method (first (eval action)))]
-    `(let [request-handler# (second ~action)
-           url-handler# (nth ~action 2)]
-       (defn ~(symbol (str name "->url")) [& params#] (url-handler# (->url ~path (first params#))))
-       (def ~name
-         (~method-sym ~path request# (request-handler# request#)))
-       ~name)))
-
-(defmacro defresource
-  "Define a compojure route like defroute and a reverse routing function for each given action.
-   Usage:
-         (defresource user \"users/:id\"
-           show   [\"\" [:get identity identity]]
-           books  [\"/books\" [:get identity identity]])"
-  [name path & actions]
-  (for [[k x] (apply hash-map actions)]
-    (let [[action-path [method request-handler url-handler]] (eval x)]
-      `(let [url-handler# (last (nth ~x 1))]
-         (defn ~(symbol (str name "-" k "->url"))
-           [& params#]
-           (url-handler# (->url ~(str path action-path) (first params#)))))))
-  (cons #'defroutes
-        (cons name
-              (map (fn [[_ x]]
-                     (let [[action-path [method]] (eval x)
-                           method-sym (make-method method)]
-                       `(let [request-handler# (nth (nth ~x 1) 1)]
-                          (~method-sym ~(str path action-path) req# (request-handler# req#)))))
-                   (apply hash-map actions)))))
+(defmacro defresources
+  "Creates a named resources value in the namespace and returns the handler"
+  [res-name & args]
+  `(do (def ~res-name (resources ~(keyword (str res-name)) ~@args))
+       (->handler ~res-name)))

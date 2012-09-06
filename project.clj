@@ -8,5 +8,6 @@
                  [hiccup "1.0.0"]
                  [com.twinql.clojure/clj-conneg "1.1.0"]]
   :plugins [[lein-swank "1.4.4"]
-            [codox "0.6.1"]]
+            [codox "0.6.1"]
+            [drift "1.4.3"]]
   :aot [rip.RipException])
