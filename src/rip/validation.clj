@@ -243,17 +243,6 @@
    [nil []]
    fields))
 
-(defn set-schema [{tablename :table :as ent} schema]
-  "Creates a entity with proper table name in a postgres schema"
-  (if schema (table ent (keyword (str (name schema) "." tablename))) ent))
-
-(defmacro with-schema
-  "Binds postgres schema for tables in this scope.
-   Used for query-validation to create correct joins."
-  [schema & body]
-  `(binding [*schema* ~schema]
-     ~@body))
-
 (defn query-validator
   "Creates a function given a korma entity and maps representing the fields.
    The generated function recives the filter map from the query string and generates

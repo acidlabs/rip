@@ -51,7 +51,10 @@
   "Creates a route of a member to be passed to a resources definition.
    Usage:
           (resources :users (memb :show :get identity))
-           => /users/:id "
+           => /users/:id
+   Options:
+          - sufix
+          - url-handler"
   [res-name method route-handler & [{:keys [sufix url-handler]}]]
   (Member. method res-name "" sufix route-handler (if url-handler url-handler identity)))
 
@@ -59,7 +62,10 @@
   "Creates a route to the collection of a resources definition.
    Usage:
           (resources :users (memb :show :get identity))
-           => /users/:id "
+           => /users/:id
+   Options:
+          - sufix
+          - url-handler"
   [res-name method route-handler & [{:keys [sufix url-handler]}]]
   (Collection. method res-name "" sufix route-handler (if url-handler url-handler identity)))
 
@@ -108,7 +114,11 @@
   (str (url uri params)))
 
 (defn ->url
-  "Returns the url belonging to the passed resource"
+  "Returns the url belonging to the passed resource.
+   Usage:
+          (let [users (resources :users
+                                 (resources :documents (coll :index :get (fn [req] \"User documents\"))))]
+            (-> url [users :documents :index] {:route-params {:id 1}}))"
   [resource & [{:keys [route-params query-params]}]]
   (query-url
    (path-url (:path (if (vector? resource)
@@ -122,3 +132,9 @@
   [res-name & args]
   `(do (def ~res-name (resources ~(keyword (str res-name)) ~@args))
        (->handler ~res-name)))
+
+(defmacro routefn
+  "A macro for wrapping a function definition with bindings used by compojure's destructuring request forms"
+  [bindings & body]
+  `(fn [request#]
+     (let-request [~bindings request#] ~@body)))

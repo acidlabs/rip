@@ -55,5 +55,16 @@
     (doseq [[k ref-ent] outer-refs]
       (let [fk (get-fk ent ref-ent)]
         (insert ref-ent
-                (values (map (fn [val] (assoc val fk new-pk)) (value k))))))
+          (values (map (fn [val] (assoc val fk new-pk)) (value k))))))
     new-pk))
+
+(defn set-schema [{tablename :table :as ent} schema]
+  "Creates a entity with proper table name in a postgres schema"
+  (if schema (table ent (keyword (str (name schema) "." tablename))) ent))
+
+(defmacro with-schema
+  "Binds postgres schema for tables in this scope.
+   Used for query-validation to create correct joins."
+  [schema & body]
+  `(binding [*schema* ~schema]
+     ~@body))
