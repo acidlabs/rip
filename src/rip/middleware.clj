@@ -59,6 +59,11 @@
 
 (defn parse-xml [s] (val (first (xml->hash-map (xml/parse-str s)))))
 
+(defn- get-cause [e]
+  (if-let [cause (.getCause e)]
+    (get-cause cause)
+    e))
+
 (defn wrap-server-error
   "Wrap a handler such that exceptions are handled with the given error-function."
   [handler error-function]
@@ -66,7 +71,7 @@
     (try
       (handler request)
       (catch Exception ex
-        (error-function ex)))))
+        (error-function (get-cause ex))))))
 
 (defn wrap-allow
   "Used to check for permissions on resources."

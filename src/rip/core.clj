@@ -2,7 +2,8 @@
   "Provides a defaction macro for a more RESTFul definition of request handlers."
   (:use compojure.core
         hiccup.util)
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as string]
+            [clout.core :exclude (Route)]))
 
 (defrecord Route [method path route-handler url-handler])
 
@@ -17,11 +18,23 @@
   [method path route-handler & [url-handler]]
   (Route. method path route-handler (if url-handler url-handler identity)))
 
-(defn gen-resources
-  [{:keys [res-name resources] :as res} & [parent-path]]
+(defn- prepare-route
+  "Pre-compile the route."
+  [route]
+  (cond
+    (string? route)
+    (clout.core/route-compile route)
+    (vector? route)
+    (clout.core/route-compile
+     (first route)
+     (second route))))
+
+(defn- gen-resources
+  [{:keys [res-name resources] :as res} & [parent-path parent-ids]]
   (let [path        (if parent-path (str parent-path "/" (name res-name)) (str "/" (name res-name)))
         id          (if parent-path (str ":" (name res-name) "-id") ":id")
-        member-path (str path "/" id)]
+        member-path (str path "/" id)
+        ids         (assoc parent-ids (keyword (apply str (rest id))) #"\w+")]
     (assoc res
       :path path
       :id id
@@ -30,9 +43,13 @@
                 (assoc resources (:res-name resource)
                        (condp #(= (type %2) %1) resource
                          Member     (assoc resource :path
-                                           (str path "/" id (:sufix resource)))
-                         Collection (assoc resource :path (str path (:sufix resource)))
-                         Resources (gen-resources resource member-path)
+                                           [(str path "/" id (:sufix resource)) ids])
+                         Collection (assoc resource :path
+                                           (let [uri (str path (if-let [sufix (:sufix resource)] (str "/" sufix)))]
+                                             (if parent-ids
+                                               [uri parent-ids]
+                                               uri)))
+                         Resources (gen-resources resource member-path ids)
                          (throw (Exception. "A resource must be either of type Member, Collection or Resources")))))
               {}
               (if (map? resources) (vals resources) resources)))))
@@ -42,7 +59,7 @@
    Receives a name and a series of actions defined through functions memb and/or coll.
    Usage:
           (resources :users
-                     (memb :show :get identity)
+                     (memb :show :get (fn))
                      (coll :index :get identity))"
   [res-name & res]
   (gen-resources (Resources. res-name nil nil res)))
@@ -77,15 +94,15 @@
 
 (defmethod ->handler Collection
   [{:keys [method path route-handler]}]
-  (make-route method path route-handler))
+  (make-route method (prepare-route path) route-handler))
 
 (defmethod ->handler Member
   [{:keys [method path route-handler]}]
-  (make-route method path route-handler))
+  (make-route method (prepare-route path) route-handler))
 
 (defmethod ->handler Route
   [{:keys [method path route-handler]}]
-  (make-route method path route-handler))
+  (make-route method (prepare-route path) route-handler))
 
 (defn- throwf [msg & args]
   (throw (Exception. (apply format msg args))))
