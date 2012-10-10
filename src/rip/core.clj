@@ -22,19 +22,19 @@
   "Pre-compile the route."
   [route]
   (cond
-    (string? route)
-    (clout.core/route-compile route)
-    (vector? route)
-    (clout.core/route-compile
-     (first route)
-     (second route))))
+   (string? route)
+   (clout.core/route-compile route)
+   (vector? route)
+   (clout.core/route-compile
+    (first route)
+    (second route))))
 
 (defn- gen-resources
   [{:keys [res-name resources] :as res} & [parent-path parent-ids]]
   (let [path        (if parent-path (str parent-path "/" (name res-name)) (str "/" (name res-name)))
         id          (if parent-path (str ":" (name res-name) "-id") ":id")
         member-path (str path "/" id)
-        ids         (assoc parent-ids (keyword (apply str (rest id))) #"\w+")]
+        ids         (assoc parent-ids (keyword (apply str (rest id))) #"(\w|-)+")]
     (assoc res
       :path path
       :id id

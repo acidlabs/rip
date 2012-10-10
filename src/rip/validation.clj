@@ -35,7 +35,6 @@
 (defn max-length [max] (fn [val] (gen-validation (<= (count val) max) :max-length max)))
 (defn range-length [min max] (fn [val] (gen-validation (or (>= (count val) min)
                                                           (<= (count val) :range-length min max)))))
-
 ;; Numbers constraints
 (defn min-val [min] (fn [val] (gen-validation (>= val min) :min min)))
 (defn max-val [max] (fn [val] (gen-validation (<= val max) :max max)))
