@@ -17,8 +17,8 @@
               (wrap-accept-header accepted-types)
               (wrap-allow allow-fn)
               auth-handler))
-        (fn [url]
-          {:show (merge {:href url} (when title {:title title}))})))
+        {:url-handler (fn [url]
+                        {:show (merge {:href url} (when title {:title title}))})}))
 
 (defn index
   "Creates a index action to be passed to resources."
@@ -31,8 +31,8 @@
               (wrap-accept-header accepted-types)
               (wrap-allow allow-fn)
               auth-handler))
-        (fn [url]
-          {:index (merge {:href url} (when title {:title title}))})))
+        {:url-handler (fn [url]
+                        {:index (merge {:href url} (when title {:title title}))})}))
 
 (defn add
   "Creates an add action to be passed to resources."
@@ -46,8 +46,8 @@
               (wrap-supported-content-type supported-types)
               (wrap-allow allow-fn)
               auth-handler))
-        (fn [url]
-          {:add (merge {:href url} (when title {:title title}))})))
+        {:url-handler (fn [url]
+                        {:add (merge {:href url} (when title {:title title}))})}))
 
 (defn upload
   "Creates a generic action for multipart uploading.
@@ -64,5 +64,5 @@
               (wrap-supported-content-type supported-types)
               (wrap-allow allow-fn)
               auth-handler))
-        (fn [url]
-          {:upload (merge {:href url} (when title {:title title}))})))
+        {:url-handler (fn [url]
+                        {:upload (merge {:href url} (when title {:title title}))})}))
