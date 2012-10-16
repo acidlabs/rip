@@ -34,7 +34,7 @@
   (let [path        (if parent-path (str parent-path "/" (name res-name)) (str "/" (name res-name)))
         id          (if parent-path (str ":" (name res-name) "-id") ":id")
         member-path (str path "/" id)
-        ids         (assoc parent-ids (keyword (apply str (rest id))) #"(\w|-)+")]
+        ids         (assoc parent-ids (keyword (apply str (rest id))) #"[\w-]+")]
     (assoc res
       :path path
       :id id

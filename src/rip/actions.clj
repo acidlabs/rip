@@ -49,6 +49,40 @@
         {:url-handler (fn [url]
                         {:add (merge {:href url} (when title {:title title}))})}))
 
+(defn update
+  "Creates an update action to be passed to resources."
+  [response entity-fetch-handler entity-store-handler auth-handler allow-fn supported-types
+   accepted-types get-etag & [{:keys [title responses]}]]
+  (coll :add :put
+        (binding [*responses* (merge *responses* responses)]
+          (-> response
+              entity-store-handler
+              (wrap-etag get-etag)
+              entity-fetch-handler
+              (wrap-accept-header accepted-types)
+              (wrap-supported-content-type supported-types)
+              (wrap-allow allow-fn)
+              auth-handler))
+        {:url-handler (fn [url]
+                        {:update (merge {:href url} (when title {:title title}))})}))
+
+(defn delete
+  "Creates a show action to be passed to resources."
+  [response entity-fetch-handler entity-remove-handler auth-handler allow-fn accepted-types
+   get-etag
+   & [{:keys [title responses]}]]
+  (memb :show :get
+        (binding [*responses* (merge *responses* responses)]
+          (-> response
+              entity-remove-handler
+              (wrap-etag get-etag)
+              entity-fetch-handler
+              (wrap-accept-header accepted-types)
+              (wrap-allow allow-fn)
+              auth-handler))
+        {:url-handler (fn [url]
+                        {:show (merge {:href url} (when title {:title title}))})}))
+
 (defn upload
   "Creates a generic action for multipart uploading.
    Visit http://mmcgrana.github.com/ring/ring.middleware.multipart-params.html
