@@ -3,7 +3,7 @@
   (:use rip.middleware
         ring.middleware.multipart-params
         ring.middleware.multipart-params.byte-array
-        ring.middleware.multipart-params.temp_file
+        ring.middleware.multipart-params.temp-file
         rip.core))
 
 (defn show
