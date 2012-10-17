@@ -73,7 +73,7 @@
      -route-opts: route options(sufix, url-handler)"
   [response entity-fetch-handler entity-store-handler auth-handler allow-fn supported-types
    accepted-types get-etag & [{:keys [title responses route-opts]}]]
-  (coll :update :put
+  (memb :update :put
         (binding [*responses* (merge *responses* responses)]
           (-> response
               entity-store-handler
