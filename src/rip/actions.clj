@@ -87,15 +87,15 @@
                                {:update (merge {:href url} (when title {:title title}))})}
                route-opts)))
 
-(defn delete
-  "Creates a delete action to be passed to resources.
+(defn remove
+  "Creates a remove action to be passed to resources.
    Options:
      -title:      title of the link
      -responses:  default middleware responses
      -route-opts: route options(sufix, url-handler)"
   [response entity-fetch-handler entity-remove-handler auth-handler allow-fn accepted-types
    get-etag & [{:keys [title responses route-opts]}]]
-  (memb :show :get
+  (memb :remove :delete
         (binding [*responses* (merge *responses* responses)]
           (-> response
               entity-remove-handler
@@ -105,7 +105,7 @@
               (wrap-allow allow-fn)
               auth-handler))
         (merge {:url-handler (fn [url]
-                               {:show (merge {:href url} (when title {:title title}))})}
+                               {:remove (merge {:href url} (when title {:title title}))})}
                route-opts)))
 
 (defn upload
