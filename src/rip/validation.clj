@@ -6,8 +6,6 @@
         rip.db)
   (:require [clojure.string :as st]))
 
-(def ^{:dynamic true} *schema* nil)
-
 ;; Body validation
 
 (def ^{:private true} default-messages
@@ -108,6 +106,11 @@
       [type-valid constraints]
       [type-valid])))
 
+{:name "asfas"
+ :phones [10 "10%" 0.1]}
+
+:phones [{:number "asdasf"} {:number "sdf"}]
+
 (defn body-validator
   "Create a map with values:
     - valid? = If the validation was successful
@@ -190,12 +193,16 @@
     (if (or (keyword? validator) (fn? validator) (class? validator)
             (and (vector? validator) (keyword? (first validator))
                  (or (fn? (second validator)) (class? (second validator)))))
-      (let [[field validator] (cond (vector? validator) (if (class? (second validator))
-                                                          [(first validator) (class-validator (second validator))]
-                                                          validator)
-                                    (keyword? validator) [validator identity]
-                                    (class? validator) [field (class-validator validator)]
-                                    :else [field validator])]
+      (let [[field validator] (cond
+                               (vector? validator)
+                               (if (class? (second validator))
+                                 [(first validator) (class-validator (second validator))]
+                                 validator)
+                               (keyword? validator)
+                               [validator identity]
+                               (class? validator)
+                               [field (class-validator validator)]
+                               :else [field validator])]
         (reduce
          pred-or
          (map (fn [pred]
@@ -258,7 +265,6 @@
                          :year date-validatior})})"
   [ent & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
-    (let [ent (set-schema ent *schema*)
-          alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
+    (let [alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
           [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
