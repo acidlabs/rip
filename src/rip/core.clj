@@ -13,46 +13,29 @@
 
 (defrecord Resources [res-name path id resources])
 
-(defn route
-  "Creates a route object"
-  [method path route-handler & [url-handler]]
-  (Route. method path route-handler (if url-handler url-handler identity)))
-
-(defn- prepare-route
-  "Pre-compile the route."
-  [route]
-  (cond
-   (string? route)
-   (clout.core/route-compile route)
-   (vector? route)
-   (clout.core/route-compile
-    (first route)
-    (second route))))
-
 (defn- gen-resources
-  [{:keys [res-name resources] :as res} & [parent-path parent-ids]]
+  [{:keys [res-name resources] :as res} & [parent-path]]
   (let [path        (if parent-path (str parent-path "/" (name res-name)) (str "/" (name res-name)))
         id          (if parent-path (str ":" (name res-name) "-id") ":id")
-        member-path (str path "/" id)
-        ids         (assoc parent-ids (keyword (apply str (rest id))) #"[\w-]+")]
+        member-path (str path "/" id)]
     (assoc res
       :path path
       :id id
       :resources
-      (reduce (fn [resources resource]
-                (assoc resources (:res-name resource)
-                       (condp #(= (type %2) %1) resource
-                         Member     (assoc resource :path
-                                           [(str path "/" id (:sufix resource)) ids])
-                         Collection (assoc resource :path
-                                           (let [uri (str path (if-let [sufix (:sufix resource)] (str "/" sufix)))]
-                                             (if parent-ids
-                                               [uri parent-ids]
-                                               uri)))
-                         Resources (gen-resources resource member-path ids)
-                         (throw (Exception. "A resource must be either of type Member, Collection or Resources")))))
-              {}
-              (if (map? resources) (vals resources) resources)))))
+      (reduce
+       (fn [resources resource]
+         (assoc resources (:res-name resource)
+                (condp #(= (type %2) %1) resource
+                  Member     (assoc resource :path
+                                    (str member-path (if-let [sufix (:sufix resource)]
+                                                       (str "/" (name sufix)))))
+                  Collection (assoc resource :path
+                                    (str path (if-let [sufix (:sufix resource)]
+                                                (str "/" (name sufix)))))
+                  Resources  (gen-resources resource member-path)
+                  (throw (Exception. "A resource must be either of type Member, Collection or Resources")))))
+       {}
+       (if (map? resources) (vals resources) resources)))))
 
 (defn resources
   "Similar to rails resources, provides a way to define routes based on RESTful like actions.
@@ -86,7 +69,14 @@
   [res-name method route-handler & [{:keys [sufix url-handler]}]]
   (Collection. method res-name "" sufix route-handler (if url-handler url-handler identity)))
 
-(defmulti ->handler "Generates the ring handler function for the passed resource" type)
+(defn route
+  "Creates a route object"
+  [method path route-handler & [url-handler]]
+  (Route. method path route-handler (if url-handler url-handler identity)))
+
+(defmulti ->handler
+  "Generates the ring handler function for the passed resource"
+  type)
 
 (defmethod ->handler Resources
   [{:keys [resources]}]
@@ -94,15 +84,15 @@
 
 (defmethod ->handler Collection
   [{:keys [method path route-handler]}]
-  (make-route method (prepare-route path) route-handler))
+  (make-route method (clout.core/route-compile path) route-handler))
 
 (defmethod ->handler Member
   [{:keys [method path route-handler]}]
-  (make-route method (prepare-route path) route-handler))
+  (make-route method (clout.core/route-compile path) route-handler))
 
 (defmethod ->handler Route
   [{:keys [method path route-handler]}]
-  (make-route method (prepare-route path) route-handler))
+  (make-route method (clout.core/route-compile path) route-handler))
 
 (defn- throwf [msg & args]
   (throw (Exception. (apply format msg args))))
@@ -155,3 +145,17 @@
   [bindings & body]
   `(fn [request#]
      (let-request [~bindings request#] ~@body)))
+
+(defn- request-last-param-format
+  [{uri :uri}]
+  (keyword (last (string/split uri #"\."))))
+
+(defmacro with-format
+  "Used in case of extensions for the last parameter in the request's path
+  Usage:
+         (with-format request
+           :json \"Json response\"
+           \"No extension response\")"
+  [request & case-body]
+  `(case ~(request-last-param-format request)
+     ~@case-body))
