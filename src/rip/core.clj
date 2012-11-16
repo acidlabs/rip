@@ -148,7 +148,7 @@
 
 (defn- request-last-param-format
   [{uri :uri}]
-  (keyword (last (string/split uri #"\."))))
+  (keyword (second (string/split uri #"\."))))
 
 (defmacro with-format
   "Used in case of extensions for the last parameter in the request's path

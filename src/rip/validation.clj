@@ -176,7 +176,7 @@
   "Generates an aliased entity and a clause for the join"
   {:no-doc true}
   [alias ent sub-alias sub-ent]
-  (let [rel @((:rel ent) (:name sub-ent))
+  (let [rel (get-rel ent sub-ent)
         field #(last (clojure.string/split (val (first %)) #"\""))
         pk (field (:pk rel))
         fk (field (:fk rel))]
@@ -268,3 +268,12 @@
     (let [alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
           [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
+
+(defentity users
+  (has-many books))
+
+(defentity books
+  (belongs-to users))
+
+(sql-only
+ (query-validator ))
