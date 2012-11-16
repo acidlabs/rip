@@ -1,6 +1,6 @@
 (defproject rip "0.0.9"
   :description "REST in Peace, a framework for RESTful API development."
-  :dependencies [[org.clojure/clojure "1.3.0"]
+  :dependencies [[org.clojure/clojure "1.4.0"]
                  [compojure "1.1.3"]
                  [org.clojars.acidlabs/korma "0.4.0"]
                  [cheshire "4.0.2"]
