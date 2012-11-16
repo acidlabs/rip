@@ -9,6 +9,5 @@
                  [clout "1.1.0"]
                  [ring/ring-core "1.1.5"]
                  [com.twinql.clojure/clj-conneg "1.1.0"]]
-  :plugins [[lein-swank "1.4.4"]
-            [codox "0.6.1"]]
+  :plugins [[codox "0.6.1"]]
   :aot [rip.RipException])
