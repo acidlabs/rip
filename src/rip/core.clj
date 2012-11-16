@@ -78,19 +78,19 @@
   "Generates the ring handler function for the passed resource"
   type)
 
-(defmethod ->handler Resources
+(defmethod ->handler rip.core.Resources
   [{:keys [resources]}]
   (apply routes (map ->handler (vals resources))))
 
-(defmethod ->handler Collection
+(defmethod ->handler rip.core.Collection
   [{:keys [method path route-handler]}]
   (make-route method (clout.core/route-compile path) route-handler))
 
-(defmethod ->handler Member
+(defmethod ->handler rip.core.Member
   [{:keys [method path route-handler]}]
   (make-route method (clout.core/route-compile path) route-handler))
 
-(defmethod ->handler Route
+(defmethod ->handler rip.core.Route
   [{:keys [method path route-handler]}]
   (make-route method (clout.core/route-compile path) route-handler))
 
