@@ -268,12 +268,3 @@
     (let [alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
           [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
-
-(defentity users
-  (has-many books))
-
-(defentity books
-  (belongs-to users))
-
-(sql-only
- (query-validator ))
