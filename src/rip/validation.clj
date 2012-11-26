@@ -264,8 +264,16 @@
                          :year date-validator})})"
   [rel & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
-    (let [ent (if (and parent-ent (keyword? rel)) (get-rel parent-ent rel) rel)
+    (let [ent (if (and child? (keyword? rel)) (get-rel parent-ent rel) rel)
           rel-name (if (keyword? rel) (name rel) (:name rel))
-          alias (if parent-alias (str rel-name "_" parent-alias) rel-name)
-          [where joins] (make-filter ent alias (apply merge fields) data)]
-      [where (concat (when child? [(make-join parent-alias parent-ent alias rel)]) joins)])))
+          alias (if child? (str rel-name "_" parent-alias) rel-name)
+          filter (make-filter ent alias (apply merge fields) data)
+          [where-clause joins] (concat (when child? [(make-join parent-alias parent-ent alias rel)]) filter)]
+      (if child?
+        [where-clause joins]
+        (reduce
+         (fn [query [ent clause]]
+           (join query ent clause))
+         (-> (select* ent)
+             (where where-clause))
+         joins)))))
