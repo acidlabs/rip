@@ -180,7 +180,7 @@
         field #(last (clojure.string/split (val (first %)) #"\""))
         pk (field (:pk rel))
         fk (field (:fk rel))]
-    [[sub-ent (keyword sub-alias)]
+    [[(:ent rel) (keyword sub-alias)]
      (apply pred-= (map
                     (fn [[alias field]] (keyword (str (name alias) \. field)))
                     [[alias pk] [sub-alias fk]]))]))
@@ -265,6 +265,7 @@
   [rel & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
     (let [ent (if (and parent-ent (keyword? rel)) (get-rel parent-ent rel) rel)
-          alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
+          rel-name (if (keyword? rel) (name rel) (:name rel))
+          alias (if parent-alias (str rel-name "_" parent-alias) rel-name)
           [where joins] (make-filter ent alias (apply merge fields) data)]
       [where (concat (when child? [(make-join parent-alias parent-ent alias rel)]) joins)])))
