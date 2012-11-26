@@ -253,8 +253,7 @@
   "Creates a function given a korma entity and maps representing the fields.
    The generated function recives the filter map from the query string and generates
    a where clause and a list of joins. The value of the field can be a class, function,
-   keyword (to be replaced for the original field keyword). If a vector is passed,
-   the first value must be a keyword and the second a class or function.
+   or a vector with a keyword and the class or function.
    Usage:
           (query-validator user
             {:name    String
@@ -262,9 +261,10 @@
                        :street [:address_street String]}
              :books   (query-validator books
                         {:name String
-                         :year date-validatior})})"
-  [ent & fields]
+                         :year date-validator})})"
+  [rel & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
-    (let [alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
+    (let [ent (if (and parent-ent (keyword? rel)) (get-rel parent-ent rel) rel)
+          alias (if parent-alias (str (:name ent) "_" parent-alias) (:name ent))
           [where joins] (make-filter ent alias (apply merge fields) data)]
-      [where (concat (when child? [(make-join parent-alias parent-ent alias ent)]) joins)])))
+      [where (concat (when child? [(make-join parent-alias parent-ent alias rel)]) joins)])))
