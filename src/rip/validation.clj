@@ -6,6 +6,8 @@
         rip.db)
   (:require [clojure.string :as st]))
 
+(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x#) x#))
+
 ;; Body validation
 
 (def ^{:private true} default-messages
@@ -187,7 +189,7 @@
 
 (let [class-validator (fn [c] (fn [x] (if (= (type x) c) x (throw invalid-filter))))]
   (defn- field-cond
-    "Generates the clause for a field assuming the input corresponds to a vector"
+    "Generates the clause for a field assuming the input is a vector"
     {:no-doc true}
     [field validator pred]
     (if (or (keyword? validator) (fn? validator) (class? validator)
@@ -255,7 +257,7 @@
    a where clause and a list of joins. The value of the field can be a class, function,
    or a vector with a keyword and the class or function.
    Usage:
-          (query-validator user
+          (query-validator users
             {:name    String
              :address {:city [:address_city String]
                        :street [:address_street String]}
@@ -264,13 +266,13 @@
                          :year date-validator})})"
   [rel & fields]
   (fn [data & [parent-ent parent-alias :as child?]]
-    (let [ent (if (and child? (keyword? rel)) (get-rel parent-ent rel) rel)
+    (let [ent      (if (and child? (keyword? rel)) (get-rel parent-ent rel) rel)
           rel-name (if (keyword? rel) (name rel) (:name rel))
-          alias (if child? (str rel-name "_" parent-alias) rel-name)
-          filter (make-filter ent alias (apply merge fields) data)
+          alias    (if child? (str rel-name "_" parent-alias) rel-name)
+          filter   (make-filter ent alias (apply merge fields) data)
           [where-clause joins] (concat (when child? [(make-join parent-alias parent-ent alias rel)]) filter)]
       (if child?
-        [where-clause joins]
+        (dbg [where-clause joins])
         (reduce
          (fn [query [ent clause]]
            (join query ent clause))

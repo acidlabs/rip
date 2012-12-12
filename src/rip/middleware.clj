@@ -9,13 +9,13 @@
 (def ^{:dynamic true :doc "Default xml serialization tags"} *xml-tags* {:list :list :item :item})
 
 (def ^{:dynamic true :doc "Default error responses"} *responses*
-  {:forbidden {:status 403 :body "Forbidden."}
-   :unsupported-media-tpye {:status 415 :body "Unsupported Media Type"}
+  {:forbidden               {:status 403 :body "Forbidden."}
+   :unsupported-media-tpye  {:status 415 :body "Unsupported Media Type"}
    :request-entity-too-long {:status 413 :body "Request entity too large."}
-   :not-acceptable {:status 406 :body "Not Acceptable"}
-   :precondition-failed {:status 412 :body "Precondition Failed."}
-   :unauthorized {:status 401 :body "Unauthorized."}
-   :not-modified {:status 304 :body "Not Modified."}})
+   :not-acceptable          {:status 406 :body "Not Acceptable"}
+   :precondition-failed     {:status 412 :body "Precondition Failed."}
+   :unauthorized            {:status 401 :body "Unauthorized."}
+   :not-modified            {:status 304 :body "Not Modified."}})
 
 (defn xml->hash-map
   "Transforms clojure.data.xml.Element to clojure maps.
@@ -54,7 +54,7 @@
                                (map (fn [val] (map->xml (*xml-tags* :item) val)) cont)))])
              [(str cont)]))))
 
-(defn gen-xml [tag value]
+(defn gen-xml [value tag]
   (xml/emit-str (map->xml tag value)))
 
 (defn parse-xml [s] (val (first (xml->hash-map (xml/parse-str s)))))
@@ -109,17 +109,19 @@
                            (parse-xml bstr))
                   :else bstr)]
       (handler (assoc-in request [:context :input] input)))))
+
 (defn wrap-accept-header
   "Checks the Accept header and validates based on the given supported content types.
    If the the content type is supported then the best type from the content negotiation is
    stored as :header-content-type in the :context map of the request."
   [handler content-types & [default-type]]
-  (fn [{{accept :accept} :headers :as request}]
-    (if accept
-      (if-let [c-t (not-empty (best-allowed-content-type accept content-types))]
-        (handler (assoc-in request [:context :header-content-type] c-t))
-        (*responses* :not-acceptable))
-      (handler request))))
+  (fn [{headers :headers :as request}]
+    (let [accept (headers "accept")]
+      (if accept
+        (if-let [c-t (not-empty (best-allowed-content-type accept content-types))]
+          (handler (assoc-in request [:context :header-content-type] c-t))
+          (*responses* :not-acceptable))
+        (handler request)))))
 
 (defn wrap-etag
   "Compares the etag from the result of calling the given function."
@@ -139,3 +141,10 @@
     (if ((:headers request) "authorization")
       (handler request)
       (*responses* :unauthorized))))
+
+(defn wrap-default-responses
+  "Sets the default responses for middlewares in this namespace"
+  [handler respones]
+  (binding [*responses* (merge respones *responses*)]
+    (fn [request]
+      (handler request))))

@@ -1,3 +1,3 @@
 (ns rip.test.core
-  (:use [rip.core])
-  (:use [clojure.test]))
+  (:use rip.core
+        clojure.test))
