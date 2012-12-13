@@ -127,12 +127,14 @@
                                  (resources :documents (coll :index :get (fn [req] \"User documents\"))))]
             (-> url [users :documents :index] {:route-params {:id 1}}))"
   [resource & [{:keys [route-params query-params]}]]
-  (query-url
-   (path-url (:path (if (vector? resource)
-                      (reduce (fn [x1 x2] (x2 (:resources x1)))
-                              resource)
-                      resource))
-             route-params) query-params))
+  (let [{:keys [path url-handler]} (if (vector? resource)
+                                     (reduce (fn [x1 x2] (x2 (:resources x1)))
+                                             resource)
+                                     resource)]
+    (url-handler
+     (query-url
+      (path-url path
+                route-params) query-params))))
 
 (defmacro defresources
   "Creates a named resources value in the namespace and returns the handler"

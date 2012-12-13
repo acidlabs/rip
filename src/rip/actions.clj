@@ -67,13 +67,11 @@
    Options:
      -sufix
      -url-handler"
-  [response entity-fetch-handler entity-store-handler auth-handler allow-fn supported-types
+  [response entity-store-handler auth-handler allow-fn supported-types
    accepted-types get-etag & [{:keys [title responses route-opts]}]]
   (memb :update :put
         (-> response
             entity-store-handler
-            (wrap-etag get-etag)
-            entity-fetch-handler
             (wrap-accept-header accepted-types)
             (wrap-supported-content-type supported-types)
             (wrap-allow allow-fn)
@@ -89,13 +87,11 @@
    Options:
      -sufix
      -url-handler"
-  [response entity-fetch-handler entity-remove-handler auth-handler allow-fn accepted-types
+  [response entity-remove-handler auth-handler allow-fn accepted-types
    get-etag & [route-opts]]
   (memb :destroy :delete
         (-> response
             entity-remove-handler
-            (wrap-etag get-etag)
-            entity-fetch-handler
             (wrap-accept-header accepted-types)
             (wrap-allow allow-fn)
             auth-handler)
