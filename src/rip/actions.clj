@@ -68,7 +68,7 @@
      -sufix
      -url-handler"
   [response entity-store-handler auth-handler allow-fn supported-types
-   accepted-types get-etag & [{:keys [title responses route-opts]}]]
+   accepted-types & [{:keys [title responses route-opts]}]]
   (memb :update :put
         (-> response
             entity-store-handler
@@ -88,7 +88,7 @@
      -sufix
      -url-handler"
   [response entity-remove-handler auth-handler allow-fn accepted-types
-   get-etag & [route-opts]]
+   & [route-opts]]
   (memb :destroy :delete
         (-> response
             entity-remove-handler
