@@ -34,12 +34,9 @@
                        (assoc m tag content)))
                    {}
                    content))
-         (let [cont (first content)
-               val (try (json/parse-string cont)
-                        (catch Exception e cont))]
-           (if (number? val)
-             val
-             cont)))})
+         (let [cont (first content)]
+           (try (json/parse-string cont)
+                (catch Exception e cont))))})
 
 (defn map->xml
   [tag cont]
