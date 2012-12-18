@@ -270,7 +270,7 @@
           filter   (make-filter ent alias (apply merge fields) data)
           [where-clause joins] (concat (when child? [(make-join parent-alias parent-ent alias rel)]) filter)]
       (if child?
-        (dbg [where-clause joins])
+        [where-clause joins]
         (reduce
          (fn [query [ent clause]]
            (join query ent clause))
