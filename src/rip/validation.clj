@@ -6,8 +6,6 @@
         rip.db)
   (:require [clojure.string :as st]))
 
-(defmacro dbg[x] `(let [x# ~x] (println '~x "=" x#) x#))
-
 ;; Body validation
 
 (def ^{:private true} default-messages
