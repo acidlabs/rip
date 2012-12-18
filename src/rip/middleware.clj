@@ -56,6 +56,24 @@
 
 (defn parse-xml [s] (val (first (xml->hash-map (xml/parse-str s)))))
 
+(defn response
+  [body status request xml-tag]
+  (let [content-type        (or (get-in request [:headers "accept"])
+                                (get-in request [:headers "content-type"]))]
+    (merge
+     {:status status
+      :body   (cond
+               (string? body)
+               body
+               (map? body)
+               (case content-type
+                 "xml"  (gen-xml body xml-tag)
+                 "json" (json/generate-string body)
+                 (json/generate-string body)))}
+     {:headers {"content-type" (if (map? body)
+                                 content-type
+                                 "text/html")}})))
+
 (defn- get-cause [e]
   (if-let [cause (.getCause e)]
     (get-cause cause)
@@ -100,7 +118,8 @@
   [handler xml-tags]
   (fn [request]
     (let [bstr (slurp (:body request))
-          input (case (second (best-allowed-content-type (get-in request [:headers "content-type"]) #{"application/*"}))
+          input (case (second (best-allowed-content-type
+                               (get-in request [:headers "content-type"]) #{"application/*"}))
                   "json" (json/parse-string bstr true)
                   "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
                            (parse-xml bstr))
