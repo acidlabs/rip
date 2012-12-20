@@ -11,8 +11,8 @@
    Options:
      -sufix
      -url-handler"
-  [response entity-fetch-handler auth-handler allow-fn accepted-types get-etag
-   & [route-opts]]
+  [response entity-fetch-handler auth-handler allow-fn accepted-types
+   get-etag & [route-opts]]
   (memb :show :get
         (-> response
             (wrap-etag get-etag)
@@ -48,8 +48,8 @@
    Options:
      -sufix
      -url-handler"
-  [response entity-store-handler auth-handler allow-fn supported-types accepted-types
-   & [route-opts]]
+  [response entity-store-handler auth-handler allow-fn supported-types
+   accepted-types & [route-opts]]
   (coll :add :post
         (-> response
             entity-store-handler
@@ -110,8 +110,8 @@
    Options:
      -expires-in  value passed to temp-file-store if store-type is :temp
      -route-opts: route options(sufix, url-handler)"
-  [response file-store-handler auth-handler allow-fn supported-types accepted-types store-type
-   & [{:keys [route-opts expires-in]}]]
+  [response file-store-handler auth-handler allow-fn supported-types
+   accepted-types store-type & [{:keys [route-opts expires-in]}]]
   (coll :upload :post
         (-> response
             file-store-handler

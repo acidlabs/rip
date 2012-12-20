@@ -58,21 +58,20 @@
 
 (defn response
   [body status request xml-tag]
-  (let [content-type        (or (get-in request [:headers "accept"])
-                                (get-in request [:headers "content-type"]))]
-    (merge
-     {:status status
-      :body   (cond
-               (string? body)
-               body
-               (map? body)
-               (case content-type
-                 "xml"  (gen-xml body xml-tag)
-                 "json" (json/generate-string body)
-                 (json/generate-string body)))}
-     {:headers {"content-type" (if (map? body)
-                                 content-type
-                                 "text/html")}})))
+  (let [content-type (or (get-in request [:headers "accept"])
+                         (get-in request [:headers "content-type"])
+                         "application/json")]
+    {:status status
+     :body   (cond
+              (string? body)
+              body
+              (map? body)
+              (case content-type
+                "application/xml" (gen-xml body xml-tag)
+                (json/generate-string body)))
+     :headers {"content-type" (if (map? body)
+                                content-type
+                                "text/html")}}))
 
 (defn- get-cause [e]
   (if-let [cause (.getCause e)]
