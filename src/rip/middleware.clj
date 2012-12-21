@@ -22,21 +22,24 @@
    To keep an analog form to json transformations, a 'list' tag must be specified
    (default to :list in *xml-tags* global varible)."
   [{:keys [tag content]}]
-  {tag (if (= (type (first content)) clojure.data.xml.Element)
-         (if (= tag (*xml-tags* :list))
-           (reduce (fn [m e]
-                     (let [[tag content] (first (xml->hash-map e))]
-                       (cons content m)))
-                   []
-                   content)
-           (reduce (fn [m e]
-                     (let [[tag content] (first (xml->hash-map e))]
-                       (assoc m tag content)))
-                   {}
-                   content))
-         (let [cont (first content)]
-           (try (json/parse-string cont)
-                (catch Exception e cont))))})
+  (if (= tag (*xml-tags* :list))
+    (reduce (fn [m e]
+              (let [[tag content] (first (xml->hash-map e))]
+                (conj m content)))
+            []
+            content)
+    {tag (if (= (type (first content)) clojure.data.xml.Element)
+           (let [first-content (xml->hash-map (first content))]
+             (if (vector? first-content)
+               first-content
+               (reduce (fn [m e]
+                         (let [[tag content] (first (xml->hash-map e))]
+                           (assoc m tag content)))
+                       {}
+                       content)))
+           (let [cont (first content)]
+             (try (json/parse-string cont)
+                  (catch Exception e cont))))}))
 
 (defn map->xml
   [tag cont]
@@ -70,7 +73,9 @@
                 "application/xml" (gen-xml body xml-tag)
                 (json/generate-string body)))
      :headers {"content-type" (if (map? body)
-                                content-type
+                                (if (= "*/*" content-type)
+                                  "application/json"
+                                  content-type)
                                 "text/html")}}))
 
 (defn- get-cause [e]
