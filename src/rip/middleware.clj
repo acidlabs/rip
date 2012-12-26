@@ -131,6 +131,7 @@
                   "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
                            (parse-xml bstr))
                   :else bstr)]
+      (prn input " " handler " " request)
       (handler (assoc-in request [:context :input] input)))))
 
 (defn wrap-accept-header
@@ -177,4 +178,4 @@
    The function should return the url of the created resource"
   [handler get-url]
   (fn [request]
-    (handler (assoc-in request [:headers "location"] (get-url request)))))
+    (assoc-in (handler request) [:headers "location"] (get-url request))))
