@@ -48,10 +48,11 @@
    Options:
      -sufix
      -url-handler"
-  [response entity-store-handler auth-handler allow-fn supported-types
+  [response location-handler entity-store-handler auth-handler allow-fn supported-types
    accepted-types & [route-opts]]
   (coll :add :post
         (-> response
+            (wrap-location-header location-handler)
             entity-store-handler
             (wrap-accept-header accepted-types)
             (wrap-supported-content-type supported-types)

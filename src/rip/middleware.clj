@@ -17,7 +17,7 @@
    :unauthorized            {:status 401 :body "Unauthorized."}
    :not-modified            {:status 304 :body "Not Modified."}})
 
-(defn xml->hash-map
+(defn- xml->hash-map
   "Transforms clojure.data.xml.Element to clojure maps.
    To keep an analog form to json transformations, a 'list' tag must be specified
    (default to :list in *xml-tags* global varible)."
@@ -41,7 +41,7 @@
              (try (json/parse-string cont)
                   (catch Exception e cont))))}))
 
-(defn map->xml
+(defn- map->xml
   [tag cont]
   (apply
    xml/element
@@ -57,11 +57,14 @@
 (defn gen-xml [value tag]
   (xml/emit-str (map->xml tag value)))
 
-(defn parse-xml [s] (val (first (xml->hash-map (xml/parse-str s)))))
+(defn parse-xml [s]
+  (val (first (xml->hash-map (xml/parse-str s)))))
 
 (defn response
+  "Creates a response from the given body(hash-map or string), status,request
+   and xml-tag for the first tag in the xml output."
   [body status request xml-tag]
-  (let [content-type (or (get-in request [:headers "accept"])
+  (let [content-type (or (get-in request [:context :accept-content-type])
                          (get-in request [:headers "content-type"])
                          "application/json")]
     {:status status
@@ -133,13 +136,13 @@
 (defn wrap-accept-header
   "Checks the Accept header and validates based on the given supported content types.
    If the the content type is supported then the best type from the content negotiation is
-   stored as :header-content-type in the :context map of the request."
+   stored as :accept-content-type in the :context map of the request."
   [handler content-types & [default-type]]
   (fn [{headers :headers :as request}]
     (let [accept (headers "accept")]
       (if accept
-        (if-let [c-t (not-empty (best-allowed-content-type accept content-types))]
-          (handler (assoc-in request [:context :header-content-type] c-t))
+        (if-let [[app format] (not-empty (best-allowed-content-type accept content-types))]
+          (handler (assoc-in request [:context :accept-content-type] (str app "/" format)))
           (*responses* :not-acceptable))
         (handler request)))))
 
@@ -168,3 +171,10 @@
   (binding [*responses* (merge respones *responses*)]
     (fn [request]
       (handler request))))
+
+(defn wrap-location-header
+  "Sets the location header from passing the request to the given function.
+   The function should return the url of the created resource"
+  [handler get-url]
+  (fn [request]
+    (handler (assoc-in request [:headers "location"] (get-url request)))))

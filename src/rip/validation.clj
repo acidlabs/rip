@@ -106,11 +106,6 @@
       [type-valid constraints]
       [type-valid])))
 
-{:name "asfas"
- :phones [10 "10%" 0.1]}
-
-:phones [{:number "asdasf"} {:number "sdf"}]
-
 (defn body-validator
   "Create a map with values:
     - valid? = If the validation was successful
