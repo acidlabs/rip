@@ -1,4 +1,4 @@
-(ns rip.test.validation
+(ns rip.test.validations
   (:use rip.validation
         korma.core
         clojure.test))
