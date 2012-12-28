@@ -8,148 +8,193 @@
 
 ;; Body validation
 
-(def ^{:private true} default-messages
-  (atom
-   {:min-length "The length must be at least %s"
-    :max-length "The length must be up to %s"
-    :range-length "The length must be between %s and %s"
-    :type-error "Invalid type"
-    :required-error "This field is required"
-    :max "It must be up to %s"
-    :min "It must be at least %s"
-    :range "It must be between %s and %s"
-    :no-error ""}))
-
-(defn update-messages
-  [msgs]
-  (swap! default-messages merge msgs))
+(def ^{:dynamic true} *default-messages*
+  {:min-size       "The length must be at least %s"
+   :max-size       "The length must be up to %s"
+   :range-size     "The length must be between %s and %s"
+   :type-error     "Invalid type"
+   :required-error "This field is required"
+   :max            "It must be up to %s"
+   :min            "It must be at least %s"
+   :range          "It must be between %s and %s"
+   :no-error       ""})
 
 (defn gen-validation
   [test code & msg-params]
-  {:valid? test :error {:message (apply format (code @default-messages) msg-params) :code code}})
+  {:valid? test :errors [{:message (apply format (code *default-messages*) msg-params) :code code}]})
 
 ;; Collections and strings constraints
-(defn min-length [min] (fn [val] (gen-validation (>= (count val) min) :min-length min)))
-(defn max-length [max] (fn [val] (gen-validation (<= (count val) max) :max-length max)))
-(defn range-length [min max] (fn [val] (gen-validation (or (>= (count val) min)
-                                                          (<= (count val) :range-length min max)))))
+
+(defn min-size [min] (fn [val] (gen-validation (>= (count val) min) :min-size min)))
+(defn max-size [max] (fn [val] (gen-validation (<= (count val) max) :max-size max)))
+(defn range-size [min max] (fn [val] (gen-validation (or (>= (count val) min)
+                                                        (<= (count val) :range-size min max)))))
+
 ;; Numbers constraints
+
 (defn min-val [min] (fn [val] (gen-validation (>= val min) :min min)))
 (defn max-val [max] (fn [val] (gen-validation (<= val max) :max max)))
 (defn range-val [min max] (fn [val] (gen-validation (or (>= val min) (<= val max)) :range min max)))
 
-(defn- type-of
-  "Create a function to validate a field type."
+(def parse-types
+  {Integer    #(Integer/parseInt %)
+   Double     #(Double/parseDouble %)
+   Boolean    #(Boolean/parseBoolean %)
+   Long       #(Long/parseLong %)
+   BigInteger #(BigInteger. %)})
+
+(defn check-type
+  [value valid-type]
+  (if (= (type value) valid-type)
+    value
+    (try (let [value ((parse-types valid-type) (str value))]
+           value)
+         (catch Exception e nil))))
+
+(defn type-of
+  "Creates a function to validate a field type.
+   The passed type can be one of the following classes:
+     String
+     Boolean
+     Integer
+     Long
+     BigInteger
+     Double
+   Or a function from a validator definition
+   Usage
+         (validator
+           {:name   (type-of String)
+            :address (type-of (validator {:number (type-of Integer)}))})"
   {:no-doc true}
-  [valid-type & [opts]]
-  (let [required? (= opts :required)]
-    (fn [val]
-      (if val
-        (cond (class? valid-type) (assoc (gen-validation (= (type val) valid-type) :type-error)
-                                    :output val :input val)
-              (fn? valid-type) (valid-type val))
-        (if required?
-          (gen-validation false :required-error)
-          (gen-validation true :no-error))))))
+  [valid-type]
+  (fn [value required?]
+    (if value
+      (cond (class? valid-type)
+            (let [new-value (check-type value valid-type)]
+              (assoc (gen-validation (not (nil? new-value)) :type-error)
+                :output new-value :input value))
+            (fn? valid-type)
+            (valid-type value))
+      (if required?
+        (gen-validation false :required-error)
+        (gen-validation true :no-error)))))
 
 (let [class-fn (fn [valid-type]
-                 (fn [[valid-list? input output] val]
-                   (let [valid-elem? (= (type val) valid-type)]
+                 (fn [[valid-list? input output] value]
+                   (let [new-value   (check-type value valid-type)
+                         valid-elem? (not (nil? new-value))]
                      [(and valid-elem? valid-list?)
-                      (if valid-elem? input (conj input
-                                                  (assoc (select-keys (gen-validation false :type-error) [:error])
-                                                    :input val)))
-                      (if valid-elem? (conj output val) output)])))
+                      (if valid-elem?
+                        input
+                        (conj input (assoc (gen-validation (not (nil? new-value)) :type-error)
+                                      :input value)))
+                      (if new-value (conj output new-value) output)])))
       valid-fn (fn [valid-type]
                  (fn [[valid-list? input output] val]
                    (let [{valid-elem? :valid? output-elem :output :as validation} (valid-type val)]
                      [(and valid-elem? valid-list?)
-                      (if valid-elem? input (conj input (select-keys validation [:input :error])))
+                      (if valid-elem? input (conj input (select-keys validation [:input :errors])))
                       (if valid-elem? (conj output output-elem) output)])))]
-
-  (defn- list-of
-    "Create a function to validate the type of the elements in a list field"
+  (defn list-of
+    "Creates a function to validate a field type of a list.
+     The passed type can be one of the following classes:
+       String
+       Boolean
+       Integer
+       Long
+       BigInteger
+       Double
+     Or a function from a validator definition
+     Usage
+           (validator
+             {:phones (list-of String)
+              :books  (list-of (validator {:year (type-of Integer)}))})"
     {:no-doc true}
-    [valid-type & [opts]]
-    (let [required? (= opts :required)]
-      (fn [list]
-        (if (not-empty list)
-          (let [[valid? input output]
-                (reduce (cond (class? valid-type) (class-fn valid-type)
-                              (fn? valid-type) (valid-fn valid-type))
-                        [true [] []]
-                        list)]
-            (assoc (gen-validation valid? :type-error) :output output :input input))
-          (if required?
-            (gen-validation false :required-error)
-            (gen-validation true :no-error)))))))
+    [valid-type]
+    (fn [list required?]
+      (if (not-empty list)
+        (let [[valid? input output]
+              (reduce
+               (cond (class? valid-type) (class-fn valid-type)
+                     (fn? valid-type) (valid-fn valid-type))
+               [true [] []]
+               list)]
+          (assoc (gen-validation valid? :type-error) :output output :input input))
+        (if required?
+          (gen-validation false :required-error)
+          (gen-validation true :no-error))))))
 
-(defn required
-  "Used for declaring a required field. The type can be a class, a function or
-   a vector containing the class or function to describe a list of that type."
-  [type & constraints]
-  (let [type-valid (if (vector? type)
-                     (list-of (first type) :required)
-                     (type-of type :required))]
-    (if constraints
-      [type-valid constraints]
-      [type-valid])))
+(defn- validate
+  [schema value]
+  (let [[valid-output error-output]
+        (reduce
+         (fn [[valid-output error-output]
+             [field-name {:keys [type-validator required? constraints]}]]
+           (let [{:keys [valid? input output] :as validation}
+                 (type-validator (field-name value) required?)]
+             (if valid?
+               (if output
+                 (let [errors (reduce
+                               (fn [total-errors constraint]
+                                 (let [{:keys [valid? errors]} (constraint output)]
+                                   (if valid? total-errors (concat errors total-errors))))
+                               []
+                               constraints)
+                       valid? (empty? errors)]
+                   (if valid?
+                     [(assoc valid-output field-name output) error-output]
+                     [valid-output (assoc error-output field-name {:input input :errors errors})]))
+                 [valid-output error-output])
+               [(assoc valid-output field-name output)
+                (assoc error-output field-name
+                       (if (coll? output)
+                         input
+                         (select-keys validation [:input :errors])))])))
+         [{} {}]
+         schema)]
+    {:valid? (and (not (empty? valid-output)) (empty? error-output))
+     :input  error-output
+     :output valid-output}))
 
-(defn optional
-  "Used for declaring an optional field. The type can be a class, a function or
-   a vector containing the class or function to describe a list of that type."
-  [type & constraints]
-  (let [type-valid (if (vector? type)
-                     (list-of (first type))
-                     (type-of type))]
-    (if constraints
-      [type-valid constraints]
-      [type-valid])))
-
-(defn body-validator
-  "Create a map with values:
+(defn validator
+  "Used to validate body content already parsed with wrap-body-parser middleware.
+   Receives a schema indicating type of each field, using type-of o list-of functions.
+   Optionaly a map with required fields and other constraints can be passed.
+   Calling the returned function results in a map with values:
     - valid? = If the validation was successful
-    - input  = Entity with posible errors with {:input :error} on invalid fields.
-    - output = Valid entity map
+    - input  = Map with errors if valid? is false, each invalid field contains a map with the input and errors.
+    - output = Valid map
    Usage:
-          (body-validator
-            {:name    (required String (max-length 30))
-             :phones  (required [String] (min-length 1))
-             :books   (optional [(body-validator {:year (required string->date)})])
-             :address (optional (body-validator
-                                  {:city (required String)
-                                   :street (optional String)}))})"
-  [& schemas]
-  (let [schema (apply merge schemas)]
-    (fn [val]
-      (let [[valid-output error-output]
-            (reduce
-             (fn [[valid-output error-output] [field-name validator]]
-               (let [[type-valid constraints] (if (fn? validator) [validator] validator)
-                     {:keys [valid? input output] :as validation} (type-valid (field-name val))]
-                 (if valid?
-                   (if output
-                     (let [errors (reduce
-                                   (fn [errors constraint]
-                                     (let [{:keys [valid? error]} (constraint output)]
-                                       (if valid? errors (cons error errors))))
-                                   []
-                                   constraints)
-                           valid? (empty? errors)]
-                       (if valid?
-                         [(assoc valid-output field-name output) error-output]
-                         [valid-output (assoc error-output field-name {:input input :error errors})]))
-                     [valid-output error-output])
-                   [(assoc valid-output field-name output)
-                    (assoc error-output field-name
-                           (if (coll? output)
-                             input
-                             (select-keys validation [:input :error])))])))
-             [{} {}]
-             schema)]
-        {:valid? (and (not (empty? valid-output)) (empty? error-output))
-         :input error-output
-         :output valid-output}))))
+          (let [v (validator
+                    {:name   (type-of String)
+                     :phones (list-of String)
+                     :books  (list-of (validator {:year (type-of String)}))}
+                    {:required    [:name]
+                     :constraints {:name [(max-size 30) (min-size 10)]}})]
+            (v {:required    [:name]
+                :constraints {:name [(max-size 30) (min-size 10)]}}))
+           ;; => {:valid? false,
+                  :input
+                  {:name
+                   {:input \"Sebastian\",
+                    :errors
+                    ({:message \"The length must be at least 10\" , :code :min-size})},
+                   :phones
+                   [{:input 3,
+                     :valid? false,
+                     :errors [{:message \"Invalid type\", :code :type-error}]}]},
+                  :output {:phones [\"555-555-555\"], :books [{:year 2012}]}}"
+  [schema & [{:keys [required constraints]}]]
+  (let [required (set required)]
+    (fn [body]
+      (validate (reduce
+                 (fn [schema [k v]]
+                   (assoc schema
+                     k {:type-validator v
+                        :required?      (contains? required k)
+                        :constraints    (k constraints)}))
+                 {}
+                 schema) body))))
 
 ;; Filter validation
 
@@ -217,9 +262,9 @@
   {:no-doc true}
   [ent alias validator pred]
   (cond
-    (fn? validator) (validator pred ent alias)
-    (map? validator) (make-filter ent alias validator pred)
-    :else (throw invalid-filter)))
+   (fn? validator) (validator pred ent alias)
+   (map? validator) (make-filter ent alias validator pred)
+   :else (throw invalid-filter)))
 
 (defn- make-filter
   "Creates a validated pair of values consisting of a where clause, and
@@ -231,15 +276,15 @@
      (if-let [pred (data field)]
        (let [field (keyword (str alias "." (name field)))]
          (cond
-           (vector? pred)
-           [(if (nil? where)
-              (field-cond field validator pred)
-              (pred-or where (field-cond field validator pred)))
-            joins]
-           (map? pred)
-           (let [[inner-where inner-joins] (inner-entity ent alias validator pred)]
-             [(pred-and where inner-where) (concat joins inner-joins)])
-           :else (throw invalid-filter)))
+          (vector? pred)
+          [(if (nil? where)
+             (field-cond field validator pred)
+             (pred-or where (field-cond field validator pred)))
+           joins]
+          (map? pred)
+          (let [[inner-where inner-joins] (inner-entity ent alias validator pred)]
+            [(pred-and where inner-where) (concat joins inner-joins)])
+          :else (throw invalid-filter)))
        result))
    [nil []]
    fields))

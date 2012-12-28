@@ -3,8 +3,7 @@
    Some wrappers recives an optional response to be merged with the default error response."
   (:require [cheshire.core :as json]
             [clojure.data.xml :as xml])
-  (:use com.twinql.clojure.conneg
-        rip.validation))
+  (:use com.twinql.clojure.conneg))
 
 (def ^{:dynamic true :doc "Default xml serialization tags"} *xml-tags* {:list :list :item :item})
 
@@ -37,9 +36,7 @@
                            (assoc m tag content)))
                        {}
                        content)))
-           (let [cont (first content)]
-             (try (json/parse-string cont)
-                  (catch Exception e cont))))}))
+           (first content))}))
 
 (defn- map->xml
   [tag cont]
@@ -131,7 +128,6 @@
                   "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
                            (parse-xml bstr))
                   :else bstr)]
-      (prn input " " handler " " request)
       (handler (assoc-in request [:context :input] input)))))
 
 (defn wrap-accept-header
@@ -140,12 +136,11 @@
    stored as :accept-content-type in the :context map of the request."
   [handler content-types & [default-type]]
   (fn [{headers :headers :as request}]
-    (let [accept (headers "accept")]
-      (if accept
-        (if-let [[app format] (not-empty (best-allowed-content-type accept content-types))]
-          (handler (assoc-in request [:context :accept-content-type] (str app "/" format)))
-          (*responses* :not-acceptable))
-        (handler request)))))
+    (if-let [accept (headers "accept")]
+      (if-let [[app format] (not-empty (best-allowed-content-type accept content-types))]
+        (handler (assoc-in request [:context :accept-content-type] (str app "/" format)))
+        (*responses* :not-acceptable))
+      (handler request))))
 
 (defn wrap-etag
   "Compares the etag from the result of calling the given function."
