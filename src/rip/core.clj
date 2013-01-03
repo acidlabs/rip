@@ -1,5 +1,5 @@
 (ns rip.core
-  "Provides a defaction macro for a more RESTFul definition of request handlers."
+  "Provides a resources abstraction similar Rails."
   (:use compojure.core
         hiccup.util)
   (:require [clojure.string :as string]
@@ -147,17 +147,3 @@
   [bindings & body]
   `(fn [request#]
      (let-request [~bindings request#] ~@body)))
-
-(defn- request-last-param-format
-  [{uri :uri}]
-  (keyword (second (string/split uri #"\."))))
-
-(defmacro with-format
-  "Used in case of extensions for the last parameter in the request's path
-  Usage:
-         (with-format request
-           :json \"Json response\"
-           \"No extension response\")"
-  [request & case-body]
-  `(case ~(request-last-param-format request)
-     ~@case-body))

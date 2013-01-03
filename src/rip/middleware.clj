@@ -5,7 +5,8 @@
             [clojure.data.xml :as xml])
   (:use com.twinql.clojure.conneg))
 
-(def ^{:dynamic true :doc "Default xml serialization tags"} *xml-tags* {:list :list :item :item})
+(def ^{:dynamic true :doc "Default xml serialization tags"}
+  *xml-tags* {:list :list :item :item})
 
 (def ^{:dynamic true :doc "Default error responses"} *responses*
   {:forbidden               {:status 403 :body "Forbidden."}
@@ -48,7 +49,9 @@
                (map #(apply map->xml %) cont)
                [(apply xml/element
                        (concat [(*xml-tags* :list) nil]
-                               (map (fn [val] (map->xml (*xml-tags* :item) val)) cont)))])
+                               (map (fn [val]
+                                      (map->xml (*xml-tags* :item) val))
+                                    cont)))])
              [(str cont)]))))
 
 (defn gen-xml [value tag]
@@ -57,26 +60,26 @@
 (defn parse-xml [s]
   (val (first (xml->hash-map (xml/parse-str s)))))
 
-(defn response
-  "Creates a response from the given body(hash-map or string), status,request
-   and xml-tag for the first tag in the xml output."
-  [body status request xml-tag]
-  (let [content-type (or (get-in request [:context :accept-content-type])
-                         (get-in request [:headers "content-type"])
-                         "application/json")]
-    {:status status
-     :body   (cond
-              (string? body)
-              body
-              (map? body)
-              (case content-type
-                "application/xml" (gen-xml body xml-tag)
-                (json/generate-string body)))
-     :headers {"content-type" (if (map? body)
-                                (if (= "*/*" content-type)
+(defn- make-entity-response
+  [& [created?]]
+  (fn [request body]
+    (let [content-type
+          (or (get-in request [:context :accept-content-type])
+              (get-in request [:headers "content-type"])
+              "application/json")]
+      {:status  (if created? 201 200)
+       :body    (case content-type
+                  "application/xml"
+                  (gen-xml body (get-in request [:context :xml-tag]))
+                  (json/generate-string body))
+       :headers {"content-type" (if (contains? #{"*/*" "application/*"}
+                                               content-type)
                                   "application/json"
-                                  content-type)
-                                "text/html")}}))
+                                  content-type)}})))
+
+(def entity-response (make-entity-response))
+
+(def created-response (make-entity-response true))
 
 (defn- get-cause [e]
   (if-let [cause (.getCause e)]
@@ -104,15 +107,16 @@
   "Validates the content type from the request."
   [handler content-types & [response]]
   (fn [request]
-    (if (best-allowed-content-type (get-in request [:headers "content-type"]) content-types)
-      (handler request)
-      (*responses* :unsupported-media-tpye))))
+    (if-let [c-t (get-in request [:headers "content-type"])]
+      (if (best-allowed-content-type  content-types)
+        (*responses* :unsupported-media-tpye))
+      (handler request))))
 
 (defn wrap-request-entity-length
   "Validates the length of the request body."
   [handler body-max-length & [response]]
   (fn [request]
-    (if (> (count (:body request)) body-max-length)
+    (if (> (count (slurp (:body request))) body-max-length)
       (handler request)
       (*responses* :request-entity-too-long))))
 
@@ -142,16 +146,14 @@
         (*responses* :not-acceptable))
       (handler request))))
 
-(defn wrap-etag
+(defn wrap-if-match
   "Compares the etag from the result of calling the given function."
   [handler get-etag]
   (fn [request]
-    (let [etag (get-in request [:headers "etag"])]
-      (if (nil? etag)
+    (let [etag (get-in request [:headers "if-match"])]
+      (if (and etag (or (= etag "*") (= etag (get-etag request))))
         (handler request)
-        (if (= etag (get-etag request))
-          (*responses* :not-modified)
-          (*responses* :precondition-failed))))))
+        (*responses* :precondition-failed)))))
 
 (defn wrap-auth-header
   "Cecks the Authorization header."
@@ -163,8 +165,8 @@
 
 (defn wrap-default-responses
   "Sets the default responses for middlewares in this namespace"
-  [handler respones]
-  (binding [*responses* (merge respones *responses*)]
+  [handler responses]
+  (binding [*responses* (merge responses *responses*)]
     (fn [request]
       (handler request))))
 
@@ -174,3 +176,11 @@
   [handler get-url]
   (fn [request]
     (assoc-in (handler request) [:headers "location"] (get-url request))))
+
+(defn wrap-body-validation
+  [handler validator]
+  (fn [request]
+    (let [{:keys [valid? input output]} (validator input)]
+      (if valid?
+        (handler (assoc-in request [:context :input] output))
+        (response input 400 request)))))
