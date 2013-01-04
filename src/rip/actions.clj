@@ -6,84 +6,95 @@
         ring.middleware.multipart-params.temp-file
         rip.core))
 
-(def methods-map
-  {:get    "GET"
-   :post   "POST"
-   :put    "PUT"
-   :delete "DELETE"})
-
-(defn action-link
-  [method]
-  {:url-handler (fn [url]
-                  {:href   url
-                   :method (method methods-map)})})
+(let [methods-map {:get    "GET"
+                   :post   "POST"
+                   :put    "PUT"
+                   :delete "DELETE"}]
+  (defn action-link
+    [method]
+    {:url-handler (fn [url]
+                    {:href   url
+                     :method (method methods-map)})}))
 
 (wrap-accept-header accepted-types)
 (wrap-supported-content-type supported-types)
 (wrap-allow allow-fn)
 auth-handler
 
-wrap-etag-header
-wrap-if-modified-since
-wrap-if-none-match
-wrap-if-unmodified-since
-wrap-if-match
-wrap-last-modified
+(defn wrap-entity-request-headers
+  [handler {:keys [get-etag get-last-modified]}]
+  (-> handler
+      wrap-if-modified-since
+      wrap-if-none-match
+      wrap-if-unmodified-since
+      wrap-if-match))
+
+(defn wrap-entity
+  [handler find-resource {:keys [access-fn allow-fn]}]
+  (-> handler
+      (wrap-access (or access-fn (constantly true)))
+      (wrap-entity find-resource)))
+
+(defn wrap-auth
+  [handler {:keys [allow-fn auth-handler]}]
+  (-> handler
+      (wrap-allow allow-fn)
+      auth-handler))
 
 (defn show
   "Creates a show action to be passed to resources.
    The find-resource function should return a map representing the resource
    with optional keys etag and last-modified.
-   Options map:
+   Options:
      allow-fn:     Checks permissions on this action
      access-fn:    Checks permissions on the resource
      accept-types: Set of matching types from the accept header"
-  [find-resource show-handler &
-   [{:keys [allow-fn access-fn accepted-types]}]]
+  [find-resource show-handler & [opts]]
   (memb :show
         :get
-        (-> entity-response
+        (-> ok-entity-response
             show-handler
-
-            (wrap-access access-fn)
-            find-resource
-            (wrap-allow allow-fn))
+            (wrap-entity-headers opts)
+            (wrap-entity opts)
+            (wrap-auth opts))
         (action-link :get)))
 
 (defn index
   "Creates a index action to be passed to resources."
-  [index-handler & [{:keys [allow-fn access-fn accepted-types]}]]
+  [index-handler & [opts]]
   (coll :index
         :get
-        (-> entity-response
+        (-> ok-entity-response
             index-handler
-            (wrap-allow allow-fn))))
+            (wrap-auth opts))))
 
 (defn add
   "Creates an add action to be passed to resources."
-  [add-handler location-handler
-   & [{:keys [allow-fn access-fn validator accepted-types supported-types]}]]
+  [add-handler & [opts]]
   (coll :add
         :post
         (-> created-response
-            (wrap-location-header location-handler)
+            (wrap-location-header opts)
             add-handler
-            (wrap-access access-fn)
-            (wrap-validator validator)
-            (wrap-allow allow-fn))
+            (wrap-access opts)
+            (wrap-validator opts)
+            (wrap-auth opts))
         (action-link :put)))
 
 (defn update
   "Creates an update action to be passed to resources."
-  [handler etag-fn & [allow-fn]]
+  [update-handler & [opts]]
   (memb :update
         :put
         (-> entity-response
-            show-handler
-
-            (wrap-access access-fn)
-            find-resource
-            (wrap-allow allow-fn))
+            wrap-etag-header
+            wrap-last-modified
+            update-handler
+            (wrap-access opts)
+            (wrap-validator opts)
+            (wrap-entity-headers opts)
+            (wrap-entity opts)
+            (wrap-auth opts))
         (action-link :put)))
 
 (defn destroy

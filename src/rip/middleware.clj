@@ -17,6 +17,18 @@
    :unauthorized            {:status 401 :body "Unauthorized."}
    :not-modified            {:status 304 :body "Not Modified."}})
 
+(defn assoc-input [request input]
+  (assoc-in request [:context :input] input))
+
+(defn get-input [request]
+  (get-in request [:context :input]))
+
+(defn assoc-output [request output]
+  (assoc-in request [:context :output] output))
+
+(defn get-output [request]
+  (assoc-in request [:context :output]))
+
 (defn- xml->hash-map
   "Transforms clojure.data.xml.Element to clojure maps.
    To keep an analog form to json transformations, a 'list' tag must be specified
@@ -60,26 +72,27 @@
 (defn parse-xml [s]
   (val (first (xml->hash-map (xml/parse-str s)))))
 
-(defn- make-entity-response
-  [& [created?]]
-  (fn [request body]
+(defn entity-response
+  [status]
+  (fn [request]
     (let [content-type
           (or (get-in request [:context :accept-content-type])
               (get-in request [:headers "content-type"])
-              "application/json")]
-      {:status  (if created? 201 200)
+              "application/json")
+          entity (get-output request)]
+      {:status  status
        :body    (case content-type
                   "application/xml"
-                  (gen-xml body (get-in request [:context :xml-tag]))
-                  (json/generate-string body))
+                  (gen-xml entity (get-in request [:context :xml-tag]))
+                  (json/generate-string entity))
        :headers {"content-type" (if (contains? #{"*/*" "application/*"}
                                                content-type)
                                   "application/json"
                                   content-type)}})))
 
-(def entity-response (make-entity-response))
+(def ok-entity-response (make-entity-response 200))
 
-(def created-response (make-entity-response true))
+(def created-response (make-entity-response 201))
 
 (defn- get-cause [e]
   (if-let [cause (.getCause e)]
@@ -132,7 +145,7 @@
                   "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
                            (parse-xml bstr))
                   :else bstr)]
-      (handler (assoc-in request [:context :input] input)))))
+      (handler (assoc-input request input)))))
 
 (defn wrap-accept-header
   "Checks the Accept header and validates based on the given supported content types.
@@ -180,7 +193,7 @@
 (defn wrap-body-validation
   [handler validator]
   (fn [request]
-    (let [{:keys [valid? input output]} (validator input)]
+    (let [{:keys [valid? input output]} (validator (get-input request))]
       (if valid?
-        (handler (assoc-in request [:context :input] output))
-        (response input 400 request)))))
+        (handler (assoc-input request output))
+        (entity-response input 400 request)))))
