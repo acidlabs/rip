@@ -18,16 +18,22 @@
 
 (wrap-accept-header accepted-types)
 (wrap-supported-content-type supported-types)
-(wrap-allow allow-fn)
-auth-handler
+
+(defn wrap-entity-response-headers
+  [handler {:keys [generate-etag-response last-modified-response]}]
+  (-> handler
+      (wrap-last-modified-header last-modified-response)
+      (wrap-etag-header generate-etag-response)))
 
 (defn wrap-entity-request-headers
-  [handler {:keys [get-etag get-last-modified]}]
+  [handler {:keys [generate-etag last-modified]}]
   (-> handler
       wrap-if-modified-since
       wrap-if-none-match
       wrap-if-unmodified-since
-      wrap-if-match))
+      wrap-if-match
+      (wrap-generate-etag generate-etag)
+      (wrap-last-modified last-modified)))
 
 (defn wrap-entity
   [handler find-resource {:keys [access-fn allow-fn]}]
@@ -38,25 +44,32 @@ auth-handler
 (defn wrap-auth
   [handler {:keys [allow-fn auth-handler]}]
   (-> handler
-      (wrap-allow allow-fn)
-      auth-handler))
+      (wrap-forbidden? allow-fn)
+      (wrap-authorized? auth-handler)))
 
 (defn show
   "Creates a show action to be passed to resources.
-   The find-resource function should return a map representing the resource
+   The get-entity function should return a map representing the resource
    with optional keys etag and last-modified.
    Options:
-     allow-fn:     Checks permissions on this action
-     access-fn:    Checks permissions on the resource
-     accept-types: Set of matching types from the accept header"
-  [find-resource show-handler & [opts]]
+     authorized?:            handler - authorization handler
+     allowed?:               handler - checks permissions on this action
+     access?:                hanlder - checks permissions on the resource
+     content_types_provided: set -     matching types for the accept header
+     generate-etag:          handler -
+     last-modified:          handler -
+     generate-etag-response: handler -
+     last-modified-response: handler - "
+
+  [wrap-show get-entity & [opts]]
   (memb :show
         :get
-        (-> ok-entity-response
-            show-handler
-            (wrap-entity-headers opts)
-            (wrap-entity opts)
-            (wrap-auth opts))
+        (ok-entity-response
+         (-> show-handler
+             (wrap-entity-response-headers opts)
+             (wrap-entity-request-headers opts)
+             (wrap-entity opts)
+             (wrap-auth opts)))
         (action-link :get)))
 
 (defn index
