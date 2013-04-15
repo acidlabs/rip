@@ -30,9 +30,9 @@ auth-handler
       wrap-if-match))
 
 (defn wrap-entity
-  [handler find-resource {:keys [access-fn allow-fn]}]
+  [handler find-resource {:keys [access allow]}]
   (-> handler
-      (wrap-access (or access-fn (constantly true)))
+      (wrap-access (or access (constantly true)))
       (wrap-entity find-resource)))
 
 (defn wrap-auth
@@ -46,14 +46,13 @@ auth-handler
    The find-resource function should return a map representing the resource
    with optional keys etag and last-modified.
    Options:
-     allow-fn:     Checks permissions on this action
-     access-fn:    Checks permissions on the resource
-     accept-types: Set of matching types from the accept header"
-  [find-resource show-handler & [opts]]
+     allow:        Checks permissions on this action
+     access:       Checks permissions on the resource
+     accept-types: Matching types from the accept header"
+  [find-resource handler & [opts]]
   (memb :show
         :get
-        (-> ok-entity-response
-            show-handler
+        (-> handler
             (wrap-entity-headers opts)
             (wrap-entity opts)
             (wrap-auth opts))
