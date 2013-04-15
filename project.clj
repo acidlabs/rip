@@ -8,6 +8,7 @@
                  [hiccup "1.0.1"]
                  [clout "1.1.0"]
                  [ring/ring-core "1.1.5"]
-                 [com.twinql.clojure/clj-conneg "1.1.0"]]
+                 [com.twinql.clojure/clj-conneg "1.1.0"]
+                 [postgresql "9.0-801.jdbc4"]]
   :plugins [[codox "0.6.1"]]
   :aot [rip.RipException])
