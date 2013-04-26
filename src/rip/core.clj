@@ -31,8 +31,15 @@
          ~@body)))
 
 ;; Actions
+
+(defmacro h
+  "h is for handler, a macro for wrapping a function definition with bindings used by compojure's destructuring request forms"
+  [bindings & body]
+  `(fn [request#]
+     (let-request [~bindings request#] ~@body)))
+
 (defn action
-  [res type method action handler]
+  [res action method type handler]
   (let [[action path] (if (vector? action)
                         action
                         [action (str "/" (name action))])
@@ -41,7 +48,7 @@
               [:actions action]
               {:method  method
                :path    path
-               :handler (make-route method path handler)})))
+               :handler handler})))
 
 (defn actions
   [res type & actions]
@@ -59,19 +66,13 @@
   [res & acts]
   (apply actions res acts))
 
-(defmacro routefn
-  "A macro for wrapping a function definition with bindings used by compojure's destructuring request forms"
-  [bindings & body]
-  `(fn [request#]
-     (let-request [~bindings request#] ~@body)))
-
 (defmacro index
   [res bindings & body]
   `(action
     ~res
-    :collection
-    :get
     [:index ""]
+    :get
+    :collection
     (fn [request#]
       (let-request [~bindings request#] ~@body))))
 
@@ -79,9 +80,9 @@
   [res bindings & body]
   `(action
     ~res
-    :collection
-    :post
     [:create ""]
+    :post
+    :collection
     (fn [request#]
       (let-request [~bindings request#] ~@body))))
 
@@ -89,9 +90,9 @@
   [res bindings & body]
   `(action
     ~res
-    :member
-    :get
     [:show ""]
+    :get
+    :member
     (fn [request#]
       (let-request [~bindings request#] ~@body))))
 
@@ -99,9 +100,9 @@
   [res bindings & body]
   `(action
     ~res
-    :member
-    :put
     [:update ""]
+    :put
+    :member
     (fn [request#]
       (let-request [~bindings request#] ~@body))))
 
@@ -109,9 +110,9 @@
   [res bindings & body]
   `(action
     ~res
-    :member
-    :delete
     [:delete ""]
+    :delete
+    :member
     (fn [request#]
       (let-request [~bindings request#] ~@body))))
 
@@ -127,50 +128,74 @@
 ;; Other
 
 (defn wrap*
-  [res actions & middlewares]
-  (reduce
-   (fn [res action]
-     (update-in
-      res
-      [:actions action]
-      (fn [f]
-        (reduce (fn [handler wrapper]
-                  (wrapper handler))
-                f
-                middlewares))))
-   res
-   actions))
+  [res actions middleware]
+  (if (empty? actions)
+    (update-in
+     res
+     [:middleware]
+     (fn [m] (if m (middleware m) middleware)))
+    (reduce
+     (fn [res action]
+       (update-in
+        res
+        [:actions-middleware action]
+        (fn [mw]
+          (if mw
+            (fn [h] (-> h mw middleware))
+            middleware))))
+     res
+     actions)))
 
 (defmacro wrap
-  [])
+  [res actions & body]
+  `(wrap* ~res
+          ~actions
+          (fn [handler#]
+            (-> handler#
+                ~@body))))
 
-(defresources users
-  (action :member :get :go
-          (fn [r] (get-in r [:params :id])))
-  (actions :collection
-           [:get [:index ""] (fn [_] "ascac")])
-  (nest
-   (resources :books
-              (action :member :get :go
-                      (fn [r]
-                        (str
-                         "sfsdf"
-                         (get-in r [:params :id])
-                         (get-in r [:params :users-id])))))))
+(defn make-handlers
+  [res]
+  (let [res-middleware(:middleware res)]
+    (map
+     (fn [[name {:keys [method handler path]}]]
+       (let [middleware (get-in res [:actions-middleware name])
+             handler (if middleware (middleware handler) handler)]
+         (make-route
+          method
+          path
+          (if res-middleware (res-middleware handler) handler))))
+     (:actions res))))
 
 (defn route-for
   [res]
-  (apply
-   routes
-   (concat
-    (map :handler (vals (:actions res)))
+  (let [handler (apply routes (make-handlers res))]
     (if-let [nested (not-empty (:nested res))]
-      [(context (get-in res [:paths :nested]) []
-                (apply routes (map route-for (vals nested))))]
-      []))))
+      (routes
+       handler
+       (context (get-in res [:paths :nested]) []
+                (apply routes (map route-for (vals nested)))))
+      handler)))
+
+(defresources users
+  (wrap []
+        ((fn [h] (fn [r] (str (h r))))))
+  (wrap [:index]
+        ((fn [h] (fn [r] {:users (h r)}))))
+  (action :member :get :go
+          (fn [r] (get-in r [:params :id])))
+  (index [] [1 2 3])
+  (nest
+   (resources :books
+              (action :go :get :member
+                      (h [id users-id :as {:keys [*user]}]
+                         (str
+                          "sfsdf"
+                          id
+                          users-id))))))
 
 ((route-for users)
- ;(get-in users [:actions :index :handler])
+                                        ;(get-in users [:actions :index :handler])
  {:request-method :get :uri "/users/1/books/2/go"})
 
 ;; (defresources users
@@ -215,11 +240,11 @@
 ;;         (response resp {:body resp}))
 
 ;;   ;; Add middlewares to a sigle action
-;;   (wrap :create
+;;   (wrap [:create]
 ;;         (response resp (assoc resp :status 201)))
-;;   (wrap :index
+;;   (wrap [:index]
 ;;         (response users {:users resp}))
-;;   (wrap :show
+;;   (wrap [:show]
 ;;         (response user {:user resp}))
 
 ;;   ;; Add middlewares to a group of actions
@@ -239,7 +264,7 @@
 ;;                   "Name required"))
 
 ;;   ;; HATEOAS links
-;;   (wrap :show
+;;   (wrap [:show]
 ;;         (response
 ;;          user
 ;;          (if (:active user)
@@ -247,160 +272,63 @@
 ;;            ;; Use the links function tu add HATEOAS links
 ;;            (hateoas
 ;;             user
-;;             {:activate [[users :activate] (:id user)]
-;;              :books    [[users :books :show] (:id user)]}))))
+;;             {:activate [users [:activate] (:id user)]
+;;              :books    [users [:books :index] (:id user)]}))))
 
 ;;   ;; Titles for HATOAS links
 ;;   (titles
 ;;    {:activate "Activates user"}))
 
-;; (defn resources
-;;   "Similar to rails resources, provides a way to define routes based on RESTful like actions.
-;;    Receives a name and a series of actions defined through functions memb and/or coll.
-;;    Usage:
-;;           (resources users
-;;                      (wrap
-;;                        wrap-collection)
-;;                      (action :index
-;;                              :get
-;;                              (fn [] )
-;;                              (wrap ()))
-;;                      (action :create
-;;                              :post)
-;;                      (items
-;;                         (wrap (find ))
-;;                         (action show
-;;                                 :get
-;;                                 )
-;;                         )
-;;                      (resources ))"
-;;   [name res-opt & opts]
-;;   (gen-resources (Resources. name nil nil res)))
+(defn- throwf [msg & args]
+  (throw (Exception. (apply format msg args))))
 
-;; (defn memb
-;;   "Creates a route of a member to be passed to a resources definition.
-;;    Usage:
-;;           (resources :users (memb :show :get identity))
-;;            => /users/:id
-;;    Options:
-;;           - sufix
-;;           - url-handler"
-;;   [res-name method route-handler & [{:keys [sufix url-handler]}]]
-;;   (Member. method res-name "" sufix route-handler (if url-handler url-handler identity)))
+(defn- ^{:skip-wiki true} route-arguments
+  "returns the list of route arguments in a route"
+  [route]
+  (let [args (re-seq #"/(:([^\/\.]+)|\*)" route)]
+    (map #(keyword (or (nth % 2) (second %))) args)))
 
-;; (defn coll
-;;   "Creates a route to the collection of a resources definition.
-;;    Usage:
-;;           (resources :users (memb :show :get identity))
-;;            => /users/:id
-;;    Options:
-;;           - sufix
-;;           - url-handler"
-;;   [res-name method route-handler & [{:keys [sufix url-handler]}]]
-;;   (Collection. method res-name "" sufix route-handler (if url-handler url-handler identity)))
+(defn- path-url [url route-args]
+  (let [url (if (vector? url) ;;handle complex routes
+              (first url)
+              url)
+        route-arg-names (route-arguments url)]
+    (when-not (every? (set (keys route-args)) route-arg-names)
+      (throwf "Missing route-args %s" (vec (filter #(not (contains? route-args %)) route-arg-names))))
+    (reduce (fn [path [k v]]
+              (if (= k :*)
+                (st/replace path "*" (str v))
+                (st/replace path (str k) (str v))))
+            url
+            route-args)))
 
-;; (defn route
-;;   "Creates a route object"
-;;   [method path route-handler & [url-handler]]
-;;   (Route. method path route-handler (if url-handler url-handler identity)))
+(defn- query-url [uri params]
+  (str (url uri params)))
 
-;; (defmulti ->handler
-;;   "Generates the ring handler function for the passed resource"
-;;   type)
+(defn- make-path
+  [res [action & actions] & [path]]
+  (if-let [x (get-in res [:actions action :path])]
+    (if actions
+      (throw (Exception. "Path not found"))
+      (str path x))
+    (let [x (get-in res [:nested action])]
+      (if (and x actions)
+        (make-path
+         x
+         actions
+         (str path (get-in res [:paths :nested])))
+        (throw (Exception. "Path not found"))))))
 
-;; (defmethod ->handler rip.core.Resources
-;;   [{:keys [resources]}]
-;;   (apply routes (map ->handler (vals resources))))
+(defn path-for
+  [res args & params]
+  (let [path (make-path res args)
+        args (route-arguments path)
+        path-params (take (count args) params)
+        query-params (first (drop (count args) params))]
+    (-> path
+        (path-url (apply hash-map (interleave args params)))
+        (query-url query-params))))
 
-;; (defmethod ->handler rip.core.Collection
-;;   [{:keys [method path route-handler]}]
-;;   (make-route method (clout.core/route-compile path) route-handler))
-
-;; (defmethod ->handler rip.core.Member
-;;   [{:keys [method path route-handler]}]
-;;   (make-route method (clout.core/route-compile path) route-handler))
-
-;; (defmethod ->handler rip.core.Route
-;;   [{:keys [method path route-handler]}]
-;;   (make-route method (clout.core/route-compile path) route-handler))
-
-;; (defn- throwf [msg & args]
-;;   (throw (Exception. (apply format msg args))))
-
-;; (defn- ^{:skip-wiki true} route-arguments
-;;   "returns the list of route arguments in a route"
-;;   [route]
-;;   (let [args (re-seq #"/(:([^\/\.]+)|\*)" route)]
-;;     (set (map #(keyword (or (nth % 2) (second %))) args))))
-
-;; (defn- path-url [url route-args]
-;;   (let [url (if (vector? url) ;;handle complex routes
-;;               (first url)
-;;               url)
-;;         route-arg-names (route-arguments url)]
-;;     (when-not (every? (set (keys route-args)) route-arg-names)
-;;       (throwf "Missing route-args %s" (vec (filter #(not (contains? route-args %)) route-arg-names))))
-;;     (reduce (fn [path [k v]]
-;;               (if (= k :*)
-;;                 (string/replace path "*" (str v))
-;;                 (string/replace path (str k) (str v))))
-;;             url
-;;             route-args)))
-
-;; (defn- query-url [uri params]
-;;   (str (url uri params)))
-
-;; (defn ->url
-;;   "Returns the url belonging to the passed resource.
-;;    Usage:
-;;           (let [users (resources :users
-;;                                  (resources :documents (coll :index :get (fn [req] \"User documents\"))))]
-;;             (-> url [users :documents :index] {:route-params {:id 1}}))"
-;;   [resource & [{:keys [route-params query-params]}]]
-;;   (let [{:keys [path url-handler]} (if (vector? resource)
-;;                                      (reduce (fn [x1 x2] (x2 (:resources x1)))
-;;                                              resource)
-;;                                      resource)]
-;;     (url-handler
-;;      (query-url
-;;       (path-url path
-;;                 route-params) query-params))))
-
-;; (defmacro defresources
-;;   "Creates a named resources value in the namespace and returns the handler"
-;;   [res-name & args]
-;;   `(do (def ~res-name (resources ~(keyword (str res-name)) ~@args))
-;;        (->handler ~res-name)))
-
-
-;; (defrecord Route [method path route-handler url-handler])
-
-;; (defrecord Member [method res-name path sufix route-handler url-handler])
-
-;; (defrecord Collection [method res-name path sufix route-handler url-handler])
-
-;; (defrecord Resources [res-name path id resources])
-
-;; (defn- gen-resources
-;;   [{:keys [res-name resources] :as res} & [parent-path]]
-;;   (let [path        (if parent-path (str parent-path "/" (name res-name)) (str "/" (name res-name)))
-;;         id          (if parent-path (str ":" (name res-name) "-id") ":id")
-;;         member-path (str path "/" id)]
-;;     (assoc res
-;;       :path path
-;;       :id id
-;;       :resources
-;;       (reduce
-;;        (fn [resources resource]
-;;          (assoc resources (:res-name resource)
-;;                 (condp #(= (type %2) %1) resource
-;;                   Member     (assoc resource :path
-;;                                     (str member-path (if-let [sufix (:sufix resource)]
-;;                                                        (str "/" (name sufix)))))
-;;                   Collection (assoc resource :path
-;;                                     (str path (if-let [sufix (:sufix resource)]
-;;                                                 (str "/" (name sufix)))))
-;;                   Resources  (gen-resources resource member-path)
-;;                   (throw (Exception. "A resource must be either of type Member, Collection or Resources")))))
-;;        {}
-;;        (if (map? resources) (vals resources) resources)))))
+(defn hateoas
+  []
+  )

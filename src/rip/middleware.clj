@@ -9,7 +9,8 @@
   *xml-tags* {:list :list :item :item})
 
 (def ^{:dynamic true :doc "Default error responses"} *responses*
-  {:forbidden               {:status 403 :body "Forbidden."}
+  {:not-found               {:status 404 :body "Not Found."}
+   :forbidden               {:status 403 :body "Forbidden."}
    :unsupported-media-tpye  {:status 415 :body "Unsupported Media Type"}
    :request-entity-too-long {:status 413 :body "Request entity too large."}
    :not-acceptable          {:status 406 :body "Not Acceptable"}
@@ -197,3 +198,16 @@
       (if valid?
         (handler (assoc-input request output))
         (entity-response input 400 request)))))
+
+(defmacro wrap-response
+  [handler bindings & body]
+  `(fn [request#]
+     (let [~bindings (~handler request#)]
+       ~@body)))
+
+(defn wrap-conditional
+  [handler f response]
+  (fn [request]
+    (if (f request)
+      (handler request)
+      response)))
