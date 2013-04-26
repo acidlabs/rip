@@ -73,28 +73,6 @@
 (defn parse-xml [s]
   (val (first (xml->hash-map (xml/parse-str s)))))
 
-(defn entity-response
-  [status]
-  (fn [request]
-    (let [content-type
-          (or (get-in request [:context :accept-content-type])
-              (get-in request [:headers "content-type"])
-              "application/json")
-          entity (get-output request)]
-      {:status  status
-       :body    (case content-type
-                  "application/xml"
-                  (gen-xml entity (get-in request [:context :xml-tag]))
-                  (json/generate-string entity))
-       :headers {"content-type" (if (contains? #{"*/*" "application/*"}
-                                               content-type)
-                                  "application/json"
-                                  content-type)}})))
-
-(def ok-entity-response (make-entity-response 200))
-
-(def created-response (make-entity-response 201))
-
 (defn- get-cause [e]
   (if-let [cause (.getCause e)]
     (get-cause cause)
@@ -119,7 +97,7 @@
 
 (defn wrap-supported-content-type
   "Validates the content type from the request."
-  [handler content-types & [response]]
+  [handler content-types]
   (fn [request]
     (if-let [c-t (get-in request [:headers "content-type"])]
       (if (best-allowed-content-type  content-types)
@@ -128,7 +106,7 @@
 
 (defn wrap-request-entity-length
   "Validates the length of the request body."
-  [handler body-max-length & [response]]
+  [handler body-max-length]
   (fn [request]
     (if (> (count (slurp (:body request))) body-max-length)
       (handler request)
@@ -211,3 +189,26 @@
     (if (f request)
       (handler request)
       response)))
+
+;; (defn wrap-content-types
+;;   [handler types]
+;;   (fn [request]
+
+;;     (let [content-type
+;;           (or (get-in request [:context :accept-content-type])
+;;               (get-in request [:headers "content-type"])
+;;               "application/json")
+;;           entity (get-output request)]
+;;       {:status  status
+;;        :body    (case content-type
+;;                   "application/xml"
+;;                   (gen-xml entity (get-in request [:context :xml-tag]))
+;;                   (json/generate-string entity))
+;;        :headers {"content-type" (if (contains? #{"*/*" "application/*"}
+;;                                                content-type)
+;;                                   "application/json"
+;;                                   content-type)}})))
+
+;; (def ok-entity-response (make-entity-response 200))
+
+;; (def created-response (make-entity-response 201))

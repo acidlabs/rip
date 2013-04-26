@@ -2,7 +2,6 @@
   "Provides a resources abstraction."
   (:use compojure.core
         hiccup.util
-        clojure.tools.macro
         clout.core)
   (:require [clojure.string :as st]))
 
@@ -177,108 +176,6 @@
                 (apply routes (map route-for (vals nested)))))
       handler)))
 
-(defresources users
-  (wrap []
-        ((fn [h] (fn [r] (str (h r))))))
-  (wrap [:index]
-        ((fn [h] (fn [r] {:users (h r)}))))
-  (action :member :get :go
-          (fn [r] (get-in r [:params :id])))
-  (index [] [1 2 3])
-  (nest
-   (resources :books
-              (action :go :get :member
-                      (h [id users-id :as {:keys [*user]}]
-                         (str
-                          "sfsdf"
-                          id
-                          users-id))))))
-
-((route-for users)
-                                        ;(get-in users [:actions :index :handler])
- {:request-method :get :uri "/users/1/books/2/go"})
-
-;; (defresources users
-
-;;   ;; Default CRUD actions. Use compojure's request destructuring syntax
-;;   ;; GET /users | :index
-;;   (index [] (k/select users-model))
-;;   ;; POST /users | :create
-;;   (create [user] (k/insert users-model user))
-;;   ;; GET /users/:id | :show
-;;   (show [id] (first (k/select users-model (where {:id id}))))
-;;   ;; PUT /users/:id | :update
-;;   (update [id user] (first (k/update users-model )))
-;;   ;; DELETE /users/:id | :delete
-;;   (delete [id] )
-
-;;   ;; Add other actions to /users
-;;   (collection
-;;    ;; GET /users/report | :report
-;;    [:get :report (handler [] "TODO")])
-
-;;   ;; Add other actions to /users/:id
-;;   (member
-;;    ;; Specify action name and path
-;;    ;; PUT /users/:id/action | :activate
-;;    [:put [:activate "/action"] (handler [id] "TODO")])
-
-;;   ;; Nest other resources in /users/:id
-;;   (nest-resources
-;;    (resources :books
-;;               ;; GET /users/:users-id/books
-;;               (index [users-id] (k/select books-model (where {:users-id users-id})))
-;;               ;; GET /users/:id/books/:books-id
-;;               (show [id] (k/select books-model (where {:id id})))))
-
-;;   ;; Wrapping middlewares
-;;   ;; (middlewares will be executed in the same order they are added)
-
-;;   ;; Add middlewares to all actions
-;;   (wrap []
-;;         (rip/content-types [:json :xml] :json)
-;;         (response resp {:body resp}))
-
-;;   ;; Add middlewares to a sigle action
-;;   (wrap [:create]
-;;         (response resp (assoc resp :status 201)))
-;;   (wrap [:index]
-;;         (response users {:users resp}))
-;;   (wrap [:show]
-;;         (response user {:user resp}))
-
-;;   ;; Add middlewares to a group of actions
-;;   (wrap [:show :update]
-;;         (conditional
-;;          (handler [id] (nil? (find users id)))
-;;          :not-found))
-
-;;   ;; Validations
-;;   ;; Using a schema
-;;   (wrap [:create :update]
-;;         (validate-schema :user {:name String}))
-;;   ;; Custom validations
-;;   (wrap :create
-;;         (validate :user
-;;                   (fn [user] (nil? (:name user)))
-;;                   "Name required"))
-
-;;   ;; HATEOAS links
-;;   (wrap [:show]
-;;         (response
-;;          user
-;;          (if (:active user)
-;;            user
-;;            ;; Use the links function tu add HATEOAS links
-;;            (hateoas
-;;             user
-;;             {:activate [users [:activate] (:id user)]
-;;              :books    [users [:books :index] (:id user)]}))))
-
-;;   ;; Titles for HATOAS links
-;;   (titles
-;;    {:activate "Activates user"}))
-
 (defn- throwf [msg & args]
   (throw (Exception. (apply format msg args))))
 
@@ -328,7 +225,3 @@
     (-> path
         (path-url (apply hash-map (interleave args params)))
         (query-url query-params))))
-
-(defn hateoas
-  []
-  )
