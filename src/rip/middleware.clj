@@ -3,7 +3,8 @@
    Some wrappers recives an optional response to be merged with the default error response."
   (:require [cheshire.core :as json]
             [clojure.data.xml :as xml])
-  (:use com.twinql.clojure.conneg))
+  (:use rip.util
+        com.twinql.clojure.conneg))
 
 (def ^{:dynamic true :doc "Default xml serialization tags"}
   *xml-tags* {:list :list :item :item})
@@ -118,13 +119,15 @@
   [handler xml-tags]
   (fn [request]
     (let [bstr (slurp (:body request))
-          input (case (second (best-allowed-content-type
-                               (get-in request [:headers "content-type"]) #{"application/*"}))
-                  "json" (json/parse-string bstr true)
-                  "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
-                           (parse-xml bstr))
-                  :else bstr)]
-      (handler (assoc-input request input)))))
+          entity (case (second (best-allowed-content-type
+                                (get-in request
+                                        [:headers "content-type"])
+                                #{"application/*"}))
+                   "json" (json/parse-string bstr true)
+                   "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
+                            (parse-xml bstr))
+                   :else bstr)]
+      (handler (update-in request [:params] merge entity)))))
 
 (defn wrap-accept-header
   "Checks the Accept header and validates based on the given supported content types.
@@ -162,20 +165,13 @@
     (fn [request]
       (handler request))))
 
-(defn wrap-location-header
-  "Sets the location header from passing the request to the given function.
-   The function should return the url of the created resource"
-  [handler get-url]
-  (fn [request]
-    (assoc-in (handler request) [:headers "location"] (get-url request))))
-
-(defn wrap-body-validation
-  [handler validator]
-  (fn [request]
-    (let [{:keys [valid? input output]} (validator (get-input request))]
-      (if valid?
-        (handler (assoc-input request output))
-        (entity-response input 400 request)))))
+;; (defn wrap-body-validation
+;;   [handler validator]
+;;   (fn [request]
+;;     (let [{:keys [valid? input output]} (validator (get-input request))]
+;;       (if valid?
+;;         (handler (assoc-input request output))
+;;         (entity-response input 400 request)))))
 
 (defmacro wrap-response
   [handler bindings & body]
@@ -190,25 +186,9 @@
       (handler request)
       response)))
 
-;; (defn wrap-content-types
-;;   [handler types]
-;;   (fn [request]
-
-;;     (let [content-type
-;;           (or (get-in request [:context :accept-content-type])
-;;               (get-in request [:headers "content-type"])
-;;               "application/json")
-;;           entity (get-output request)]
-;;       {:status  status
-;;        :body    (case content-type
-;;                   "application/xml"
-;;                   (gen-xml entity (get-in request [:context :xml-tag]))
-;;                   (json/generate-string entity))
-;;        :headers {"content-type" (if (contains? #{"*/*" "application/*"}
-;;                                                content-type)
-;;                                   "application/json"
-;;                                   content-type)}})))
-
-;; (def ok-entity-response (make-entity-response 200))
-
-;; (def created-response (make-entity-response 201))
+(defn wrap-exists
+  [handler exists-handler key]
+  (fn [request]
+    (if-let [entity (exists-handler request)]
+      (handler (assoc-globals request {key entity}))
+      (*responses* :not-found))))

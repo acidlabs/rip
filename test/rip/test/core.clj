@@ -2,108 +2,84 @@
   (:use rip.core
         rip.util
         rip.middleware
-        clojure.test)
-  (:require [korma.core :as k]))
+        ring.util.response
+        clojure.test
+        cheshire.core
+        ring.middleware.params
+        compojure.core
+        [korma.core :exclude (nest create)]))
 
-(defresources users
-  (wrap []
-        ((fn [h] (fn [r] (str (h r)))))
-        ((fn [h] (fn [r] (h (assoc-globals r {:a 1}))))))
-  (wrap [:index]
-        ((fn [h] (fn [r] {:users (h r)}))))
-  (action :member :get :go
-          (fn [r] (get-in r [:params :id])))
-  (index [_a] _a)
-  (nest
-   (resources :books
-              (action :go :get :member
-                      (h [id users-id :as {:keys [*user]}]
-                         (str
-                          "sfsdf"
-                          id
-                          users-id))))))
+(defentity users)
+(defentity books
+  (belongs-to users))
 
-((route-for users)
- ;;(get-in users [:actions :index :handler])
- {:request-method :get :uri "/users"})
+(def user-exists (h [id] (first (select users (where {:id id})))))
 
-(k/defentity users-model)
+(defresources users*
+  (assoc-name :users)
 
-(k/defentity books-model)
+  ;;Middleware
+  (wrap [] (wrap-macro dry-run))
+  (wrap [:show :edit :destroy] (wrap-exists user-exists :user))
+  (wrap [:create :edit] (wrap-body-parser :user))
+  (wrap-keys :users :user)
 
-(defresources users
-
-  ;; Default CRUD actions. Use compojure's request destructuring syntax
   ;; GET /users | :index
-  (index [] (k/select users-model))
+  (index [] (select users))
   ;; POST /users | :create
-  (create [user] (k/insert users-model user))
+  (create [user]
+          (let [user (insert users (values user))]
+            (create-response
+             :user
+             user
+             (path-for users* [:show] (:id user)))))
   ;; GET /users/:id | :show
-  (show [id] (first (k/select users-model (k/where {:id id}))))
+  (show [*user* id]
+        (assoc-links
+         *user*
+         {:self [users* [:show] id]
+          :edit [users* [:edit] id]}))
   ;; PUT /users/:id | :update
-  (update [id user] (first (k/update users-model )))
+  (edit [id user] (update users (set-fields user) (where {:id id})))
   ;; DELETE /users/:id | :delete
-  (delete [id] )
+  (destroy [id] (delete users (where {:id id})))
 
-  ;; Add other actions to /users
-  (collection
-   ;; GET /users/report | :report
-   [:get :report (h [] "TODO")])
-
-  ;; Add other actions to /users/:id
-  (member
-   ;; Specify action name and path
-   ;; PUT /users/:id/action | :activate
-   [:put [:activate "/action"] (h [id] "TODO")])
-
-  ;; Nest other resources in /users/:id
+  ;; Nested resources
   (nest
-   (resources :books
-              ;; GET /users/:users-id/books
-              (index [users-id] (k/select books-model (k/where {:users-id users-id})))
-              ;; GET /users/:id/books/:books-id
-              (show [id] (k/select books-model (k/where {:id id})))))
+   (resources
+    :books
+    (wrap [:index]
+          (wrap-fn (fn [b] {:body {:books b}}))
+          (wrap-exists user-exists :user)
+          (wrap-macro dry-run))
+    (index [users-id] (select books (where {:users-id users-id}))))))
 
-  ;; Wrapping middlewares
-  ;; (middlewares will be executed in the same order they are added)
+(def users-route (route-for users*))
 
-  ;; Add middlewares to all actions
-  (wrap []
-        ;;(content-types [:json :xml] :json)
-        (wrap-response resp {:body resp}))
+(users-route
+ {:request-method :get
+  :uri            "/users"})
 
-  ;; Add middlewares to a sigle action
-  (wrap [:create]
-        (wrap-response resp (assoc resp :status 201)))
-  (wrap [:index]
-        (wrap-response resp {:users resp}))
-  (wrap [:show]
-        (wrap-response resp {:user resp}))
+(users-route
+ {:request-method :post
+  :uri            "/users"
+  :body           (.getBytes (generate-string {:user {:name "sebastian"}}))
+  :headers        {"content-type" "application/json"}})
 
-  ;; Add middlewares to a group of actions
-  (wrap [:show :update]
-        (wrap-conditional
-         (h [id] (nil? (find users id)))
-         :not-found))
+(users-route
+ {:request-method :put
+  :uri            "/users/1"
+  :body           (.getBytes (generate-string {:user {:name "karla"}}))
+  :headers        {"content-type" "application/json"}})
 
-  ;; Validations
-  ;; Using a schema
-  ;; (wrap [:create :update]
-  ;;       (validate-schema :user {:name String}))
-  ;; ;; Custom validations
-  ;; (wrap :create
-  ;;       (validate :user
-  ;;                 (fn [user] (nil? (:name user)))
-  ;;                 "Name required"))
+(users-route
+ {:request-method :get
+  :uri            "/users/1"})
 
-  ;; HATEOAS links
-  (wrap [:show]
-        (wrap-response
-         user
-         (if (:active user)
-           user
-           ;; Use the links function tu add HATEOAS links
-           (hateoas
-            user
-            {:activate [users [:activate] (:id user)]
-             :books    [users [:books :index] (:id user)]})))))
+(users-route
+ {:request-method :delete
+  :uri            "/users/1"})
+
+(users-route
+ {:request-method :get
+  :uri            "/users/1/books"})

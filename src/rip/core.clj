@@ -6,16 +6,22 @@
   (:require [clojure.string :as st]))
 
 ;; Resources
-(defn resources*
-  [res]
-  (let [path (str "/" (name res))]
+(defn assoc-name
+  [res res-name]
+  (let [path (str "/" (name res-name))]
     {:name   res
-     :route  nil
      :paths  {:collection path
               :member     (str path "/:id")
-              :nested     (str path "/:" (name res) "-id")}
+              :nested     (str path "/:" (name res-name) "-id")}}))
+
+(defn resources*
+  [res]
+  (assoc-name
+    {:route  nil
      :nested {}
-     :titles {}}))
+     :titles {}
+     :middleware []}
+    res))
 
 (defmacro resources
   [res & body]
@@ -95,21 +101,21 @@
     (fn [request#]
       (let-request [~bindings request#] ~@body))))
 
-(defmacro update
+(defmacro edit
   [res bindings & body]
   `(action
     ~res
-    [:update ""]
+    [:edit ""]
     :put
     :member
     (fn [request#]
       (let-request [~bindings request#] ~@body))))
 
-(defmacro delete
+(defmacro destroy
   [res bindings & body]
   `(action
     ~res
-    [:delete ""]
+    [:destroy ""]
     :delete
     :member
     (fn [request#]
@@ -128,22 +134,7 @@
 
 (defn wrap*
   [res actions middleware]
-  (if (empty? actions)
-    (update-in
-     res
-     [:middleware]
-     (fn [m] (if m (middleware m) middleware)))
-    (reduce
-     (fn [res action]
-       (update-in
-        res
-        [:actions-middleware action]
-        (fn [mw]
-          (if mw
-            (fn [h] (-> h mw middleware))
-            middleware))))
-     res
-     actions)))
+  (update-in res [:middleware] conj [actions middleware]))
 
 (defmacro wrap
   [res actions & body]
@@ -153,22 +144,30 @@
             (-> handler#
                 ~@body))))
 
+(defn add-middleware
+  [res]
+  (reduce
+   (fn [res [actions middleware]]
+     (reduce
+      (fn [res action]
+        (update-in res [:actions action :handler] middleware))
+      res
+      (if (empty? actions)
+        (keys (:actions res))
+        actions)))
+   res
+   (:middleware res)))
+
 (defn make-handlers
   [res]
-  (let [res-middleware(:middleware res)]
-    (map
-     (fn [[name {:keys [method handler path]}]]
-       (let [middleware (get-in res [:actions-middleware name])
-             handler (if middleware (middleware handler) handler)]
-         (make-route
-          method
-          path
-          (if res-middleware (res-middleware handler) handler))))
-     (:actions res))))
+  (map
+   (fn [{:keys [method path handler]}]
+     (make-route method path handler))
+   (vals (:actions res))))
 
 (defn route-for
   [res]
-  (let [handler (apply routes (make-handlers res))]
+  (let [handler (apply routes (-> res add-middleware make-handlers))]
     (if-let [nested (not-empty (:nested res))]
       (routes
        handler
