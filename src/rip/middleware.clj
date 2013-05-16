@@ -4,6 +4,7 @@
   (:require [cheshire.core :as json]
             [clojure.data.xml :as xml])
   (:use rip.util
+        rip.core
         com.twinql.clojure.conneg))
 
 (def ^{:dynamic true :doc "Default xml serialization tags"}
@@ -17,7 +18,8 @@
    :not-acceptable          {:status 406 :body "Not Acceptable"}
    :precondition-failed     {:status 412 :body "Precondition Failed."}
    :unauthorized            {:status 401 :body "Unauthorized."}
-   :not-modified            {:status 304 :body "Not Modified."}})
+   :not-modified            {:status 304 :body "Not Modified."}
+   :bad-request             {:status 400 :body "Bad Request"}})
 
 (defn assoc-input [request input]
   (assoc-in request [:context :input] input))
@@ -186,9 +188,63 @@
       (handler request)
       response)))
 
-(defn wrap-exists
+(defn wrap-exists?
   [handler exists-handler key]
   (fn [request]
     (if-let [entity (exists-handler request)]
       (handler (assoc-globals request {key entity}))
       (*responses* :not-found))))
+
+(defn wrap-parse-params
+  [handler parsers]
+  (fn [request]
+    (try
+      (handler
+       (reduce
+        (fn [request [param parser]]
+          (update-in request [:params (name param)] parser))
+        request
+        parsers))
+      (catch Exception e
+        (.printStackTrace e)
+        (*responses* :bad-request)))))
+
+(defn wrap-pagination
+  [handler get-total path & [page-size]]
+  (h [page per_page :as req]
+     (let [total       (get-total req)
+           page        (or page 1)
+           page-size   (or per_page page-size 10)
+           total-pages (int (Math/ceil (/ total page-size)))
+           page-path   (fn [page]
+                         (conj path {:page page :per_page page-size}))]
+       (handler
+        (assoc-globals
+         req
+         {:limit  page-size
+          :offset (* (dec page) page-size)
+          :links  (merge
+                   (if (> page 1)
+                     {:first (page-path 1)
+                      :prev  (page-path (dec page))})
+                   (if (< page total-pages)
+                     {:next (page-path (inc page))
+                      :last (page-path total-pages)}))})))))
+
+(defn wrap-fn
+  [handler f]
+  (fn [request] (f (handler request))))
+
+(defmacro wrap-macro
+  [handler macro & args]
+  `(fn [request#] (~macro (~handler request#) ~@args)))
+
+(defn wrap-collection
+  [res action path get-total & [page-size]]
+  (-> res
+      (wrap [action]
+            (wrap-fn (fn [u] {:users u}))
+            (wrap-pagination get-total path (or page-size 10))
+            (wrap-parse-params
+             {:page     (parser long)
+              :per_page (parser long)}))))

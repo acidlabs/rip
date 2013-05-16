@@ -9,56 +9,78 @@
         compojure.core
         [korma.core :exclude (nest create)]))
 
+(declare users*)
 (defentity users)
 (defentity books
   (belongs-to users))
 
-(def user-exists (h [id] (first (select users (where {:id id})))))
+(defh users-count []
+  (-> (select users (aggregate (count :*) :total))
+      first
+      :total
+      (or 100)))
+
+(defh user-exists [id] (first (select users (where {:id id}))))
+
+(defn assoc-user-links
+  [{id :id :as user}]
+  (assoc-links
+   user
+   {:self [users* [:show] id] :edit [users* [:edit] id]}))
+
+(defroute action
+  :get
+  (h [] "hola"))
+
+(defscope users-scope
+  (path "/users")
+  (get! :index [] "asdasd")
+  (post! :create [] "")
+  (include
+   "/:id"
+   (get! :show [])
+   (put! :edit [])
+   (delete! :destroy []))
+  (wrap [:show :edit :destroy] (wrap-exists? user-exists :user))
+  (wrap [:create :edit] (wrap-body-parser :user))
+  (wrap [] (wrap-fn (fn [b] {:body b})))
+  (wrap [:create :show :edit] (wrap-fn (fn [u] {:user (assoc-user-links u)})))
+  (wrap-collection :index [users-scope [:index]] users-count))
 
 (defresources users*
   (assoc-name :users)
-
   ;;Middleware
-  (wrap [] (wrap-macro dry-run))
-  (wrap [:show :edit :destroy] (wrap-exists user-exists :user))
+  (wrap [:show :edit :destroy] (wrap-exists? user-exists :user))
   (wrap [:create :edit] (wrap-body-parser :user))
-  (wrap-keys :users :user)
-
+  (wrap [] (wrap-fn (fn [b] {:body b})))
+  (wrap [:create :show :edit] (wrap-fn (fn [u] {:user (assoc-user-links u)})))
+  (wrap-collection :index [users* [:index]] users-count)
   ;; GET /users | :index
-  (index [] (select users))
+  (index [*limit* *offset* *links*]
+         {:users (-> {:list (select users (limit *limit*) (offset *offset*))}
+                     (assoc-links *links*))})
   ;; POST /users | :create
-  (create [user]
-          (let [user (insert users (values user))]
-            (create-response
-             :user
-             user
-             (path-for users* [:show] (:id user)))))
+  (create [user] (first (insert users (values user))))
   ;; GET /users/:id | :show
-  (show [*user* id]
-        (assoc-links
-         *user*
-         {:self [users* [:show] id]
-          :edit [users* [:edit] id]}))
+  (show [*user*] *user*)
   ;; PUT /users/:id | :update
-  (edit [id user] (update users (set-fields user) (where {:id id})))
+  (edit [user id] (first (update users (set-fields user) (where {:id id}))))
   ;; DELETE /users/:id | :delete
-  (destroy [id] (delete users (where {:id id})))
-
+  (destroy [id] (delete users (where {:id id})) "User deleted")
   ;; Nested resources
   (nest
    (resources
     :books
-    (wrap [:index]
-          (wrap-fn (fn [b] {:body {:books b}}))
-          (wrap-exists user-exists :user)
-          (wrap-macro dry-run))
-    (index [users-id] (select books (where {:users-id users-id}))))))
+    ;; Custom actions
+    (action :example :get :member
+            (h [users-id id] (str "book " id " user " users-id))))))
 
-(def users-route (route-for users*))
+(def users-route (-> (route-for users*) (wrap-macro dry-run) wrap-params))
 
 (users-route
  {:request-method :get
-  :uri            "/users"})
+  :uri            "/users"
+  :query-string   "page=1&per_page=10"})
 
 (users-route
  {:request-method :post
@@ -82,4 +104,4 @@
 
 (users-route
  {:request-method :get
-  :uri            "/users/1/books"})
+  :uri            "/users/1/books/2/example"})
