@@ -112,7 +112,7 @@
                ))]
   [sql-str (vec params)])
 
-(query-only
+(query
  (select
   (:query ((filter-validator
             users
