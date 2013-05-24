@@ -1,107 +1,106 @@
 (ns rip.test.core
   (:use rip.core
-        rip.util
-        rip.middleware
-        ring.util.response
         clojure.test
-        cheshire.core
-        ring.middleware.params
         compojure.core
-        [korma.core :exclude (nest create)]))
+        compojure.handler
+        ring.mock.request))
 
-(declare users*)
-(defentity users)
-(defentity books
-  (belongs-to users))
+(defroute home "/" :get [] "root")
 
-(defh users-count []
-  (-> (select users (aggregate (count :*) :total))
-      first
-      :total
-      (or 100)))
-
-(defh user-exists [id] (first (select users (where {:id id}))))
-
-(defn assoc-user-links
-  [{id :id :as user}]
-  (assoc-links
-   user
-   {:self [users* [:show] id] :edit [users* [:edit] id]}))
-
-(defroute action
-  :get
-  (h [] "hola"))
-
-(defscope users-scope
-  (path "/users")
-  (get! :index [] "asdasd")
-  (post! :create [] "")
-  (include
-   "/:id"
-   (get! :show [])
-   (put! :edit [])
-   (delete! :destroy []))
-  (wrap [:show :edit :destroy] (wrap-exists? user-exists :user))
-  (wrap [:create :edit] (wrap-body-parser :user))
-  (wrap [] (wrap-fn (fn [b] {:body b})))
-  (wrap [:create :show :edit] (wrap-fn (fn [u] {:user (assoc-user-links u)})))
-  (wrap-collection :index [users-scope [:index]] users-count))
-
-(defresources users*
-  (assoc-name :users)
-  ;;Middleware
-  (wrap [:show :edit :destroy] (wrap-exists? user-exists :user))
-  (wrap [:create :edit] (wrap-body-parser :user))
-  (wrap [] (wrap-fn (fn [b] {:body b})))
-  (wrap [:create :show :edit] (wrap-fn (fn [u] {:user (assoc-user-links u)})))
-  (wrap-collection :index [users* [:index]] users-count)
-  ;; GET /users | :index
-  (index [*limit* *offset* *links*]
-         {:users (-> {:list (select users (limit *limit*) (offset *offset*))}
-                     (assoc-links *links*))})
-  ;; POST /users | :create
-  (create [user] (first (insert users (values user))))
-  ;; GET /users/:id | :show
-  (show [*user*] *user*)
-  ;; PUT /users/:id | :update
-  (edit [user id] (first (update users (set-fields user) (where {:id id}))))
-  ;; DELETE /users/:id | :delete
-  (destroy [id] (delete users (where {:id id})) "User deleted")
-  ;; Nested resources
-  (nest
+(defresources users
+  (index [] (path-for users [:index] {:page 1}))
+  (show [id] id)
+  (member
+   (PATCH* [:activate "/activate"] [id] (str id " activated")))
+  (nest-resources
+   :user
    (resources
-    :books
-    ;; Custom actions
-    (action :example :get :member
-            (h [users-id id] (str "book " id " user " users-id))))))
+    :documents
+    (index [user-id] (str user-id " documents"))
+    (show [user-id id] (path-for users [:documents :show] 1 2)))))
 
-(def users-route (-> (route-for users*) (wrap-macro dry-run) wrap-params))
+(defscope api
+  "/api"
+  (GET* :home [] "api")
+  (POST* [:login "/login"] [] "login")
+  (include
+   "/version/:version"
+   (GET* :version [version] version)
+   (make [version] (path-for api [:make] version)))
+  (nest users))
 
-(users-route
- {:request-method :get
-  :uri            "/users"
-  :query-string   "page=1&per_page=10"})
+(defn wrap-body
+  [handler]
+  (h req (str (handler req))))
 
-(users-route
- {:request-method :post
-  :uri            "/users"
-  :body           (.getBytes (generate-string {:user {:name "sebastian"}}))
-  :headers        {"content-type" "application/json"}})
+(defn wrap-exists
+  [handler]
+  (h [id :as req]
+     (if (> (Integer/parseInt id) 2)
+       {:status 404 :body "Not Found"}
+       (handler req))))
 
-(users-route
- {:request-method :put
-  :uri            "/users/1"
-  :body           (.getBytes (generate-string {:user {:name "karla"}}))
-  :headers        {"content-type" "application/json"}})
+(defn wrap-body-params
+  []
+  )
 
-(users-route
- {:request-method :get
-  :uri            "/users/1"})
+(defresources posts
+  (wrap :body [] api wrap-body)
+  (index [] [{:post {:title "title"}}])
+  (show [id] {:post {:title "title"}})
+  (change [id post] "ok")
+  (before-wrap :body :exists [:show :change] wrap-exists)
+  (after-wrap :body-to-params wrap-body-to-params))
 
-(users-route
- {:request-method :delete
-  :uri            "/users/1"})
+(defapp app
+  home
+  api
+  users
+  posts)
 
-(users-route
- {:request-method :get
-  :uri            "/users/1/books/2/example"})
+(deftest scope-and-route
+  (are [req resp] (-> req app :body (= resp))
+       (request :get "/")
+       "root"
+       (request :get "/api")
+       "api"
+       (request :post "/api/login")
+       "login"))
+
+(deftest resources-and-actions
+  (are [req resp] (-> req app :body (= resp))
+       (request :get "/users")
+       "/users?page=1"
+       (request :get "/users/1")
+       "1"))
+
+(deftest include-and-member
+  (are [req resp] (-> req app :body (= resp))
+       (request :patch "/users/1/activate")
+       "1 activated"
+       (request :get "/api/version/1")
+       "1"
+       (request :post "/api/version/2.0")
+       "/api/version/2.0"))
+
+(deftest nest-and-nest-resources
+  (are [req resp] (-> req app :body (= resp))
+       (request :get "/users/1/documents")
+       "1 documents"
+       (request :get "/users/1/documents/2")
+       "/users/1/documents/2"
+       (request :get "/api/users/1")
+       "1"))
+
+(deftest wrappers
+  (are [req resp] (-> req app :body (= resp))
+       (request :get "/posts/1")
+       "{:post {:title \"title\"}}"
+       (request :get "/posts/3")
+       "Not Found"
+       (request :put "/posts/1" {:user {:title "hola"}})
+       "ok"))
+
+((-> (GET "/" [post] post) api) (request :get "/" {:post {:title "hola"}}))
+
+(run-tests)

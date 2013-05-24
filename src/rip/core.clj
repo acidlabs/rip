@@ -5,54 +5,91 @@
         clout.core)
   (:require [clojure.string :as st]))
 
-;;Resources
+;;Routing
 
-(defn scope
-  [name path & children]
-  {:type :scope
-   :path path
-   :name name
-   :children (reduce {} children)})
+(defn scope*
+  [name path]
+  {:name       name
+   :path       path
+   :middleware []
+   :type :scope})
+
+(defmacro scope
+  [name path & body]
+  `(-> (scope* ~name ~path)
+       ~@body))
 
 (defmacro defscope
-  [name path & children]
-  `(def ~name (scope (keyword ~name) path ~@children)))
+  [scope-name path & body]
+  `(def ~scope-name
+     (-> (scope ~(keyword (name scope-name)) ~path)
+         ~@body)))
 
-(defn resources*
-  [res-name]
-  {:name res-name
-   :path (str "/" (name res-name))
-   :nested {}
-   :middleware []
-   :type :resources})
+(defn route*
+  [name path method handler]
+  {:handler handler
+   :name    name
+   :method  method
+   :path    path
+   :type    :route})
 
-(defn add-fn
-  [res f]
-  (update-in res [:fns] conj f))
+(defmacro defroute
+  [route-name path method & body]
+  `(def ~route-name
+     (route* ~(keyword (name route-name)) ~path ~method (h ~@body))))
 
 (defmacro resources
-  [name & body]
-  `(-> (resources* ~name)
+  [res-name & body]
+  `(-> (scope ~res-name ~(str "/" (name res-name)))
        ~@body))
 
 (defmacro defresources
   [res & body]
-  `(do
-     (declare ~res)
-     (def ~res
-       (resources ~(keyword (name res)) ~@body))))
+  `(def ~res (resources ~(keyword (name res)) ~@body)))
 
-(defn route
-  [name method path handler]
-  {:handler (make-route method path handler)
-   :method method
-   :path path
-   :name name
-   :type :route})
+(defn include*
+  [scope path actions]
+  (reduce
+   (fn [scope [name action]]
+     (assoc-in
+      scope
+      [:routes name]
+      (assoc action
+        :path
+        (str path (:path action)))))
+   scope
+   actions))
 
-(defmacro defroute
-  [name & args]
-  `(def ~name (route (keyword ~name) ~@args)))
+(defmacro include
+  [res path & body]
+  `(include* ~res ~path (:routes (-> {:path ~path} ~@body))))
+
+(defmacro member
+  [res & body]
+  `(include ~res "/:id" ~@body))
+
+(defn nest
+  [scope & routes]
+  (reduce
+   (fn [scope scope*]
+     (assoc-in scope [:routes (:name scope*)]
+               scope*))
+   scope
+   routes))
+
+(defmacro nest-with
+  [scope path & routes]
+  `(include
+    ~scope
+    ~path
+    (nest ~@routes)))
+
+(defmacro nest-resources
+  [scope item-name & routes]
+  `(nest-with
+    ~scope
+    ~(str "/" item-name "-id")
+    ~@routes))
 
 ;; Actions
 
@@ -67,130 +104,165 @@
   [name bindings & body]
   `(def ~name
      (fn [request#]
-      (let-request [~bindings request#] ~@body))))
+       (let-request [~bindings request#] ~@body))))
 
 (defn action
-  [res name-path method handler]
-  (let [[name path] (if (vector? name-path) name-path [name-path ""])
-        path (str (:path res) path)]
-    (assoc-in res
-              [:actions name]
-              {:method  method
-               :path    path
-               :handler handler})))
+  [scope name-path method handler]
+  (let [[name path] (if (vector? name-path) name-path [name-path ""])]
+    (assoc-in
+     scope
+     [:routes name]
+     (route* name path method handler))))
 
-(defn include*
-  [res path actions]
-  (reduce
-   (fn [res [name action]]
-     (assoc-in res
-               [:actions name]
-               (assoc action
-                 :path
-                 (str (:path res) path (:path action)))))
-   res
-   actions))
+(defmacro GET*
+  [scope name & body]
+  `(action ~scope ~name :get (h ~@body)))
 
-(defmacro include
-  [res path & body]
-  `(include* res path (:actions (-> {:path path} ~@body))))
+(defmacro POST*
+  [scope name & body]
+  `(action ~scope ~name :post (h ~@body)))
 
-(defmacro member
-  [res & body]
-  `(include res "/:id" ~@body))
+(defmacro PUT*
+  [scope name & body]
+  `(action ~scope ~name :put (h ~@body)))
 
-(defn nest
-  [res path & res*]
-  (reduce
-   (fn [res res*]
-     (assoc-in res [:nested (:name res*)]
-               [path res*]))
-   res
-   res*))
+(defmacro DELETE*
+  [scope name & body]
+  `(action ~scope ~name :delete (h ~@body)))
 
-(defmacro get!  [res name & body] `(action ~res ~name :get (h ~@body)))
+(defmacro HEAD*
+  [scope name & body]
+  `(action ~scope ~name :head (h ~@body)))
 
-(defmacro post! [res name & body] `(action ~res ~name :post (h ~@body)))
+(defmacro PATCH*
+  [scope name & body]
+  `(action ~scope ~name :patch (h ~@body)))
 
-(defmacro put! [res name & body] `(action ~res ~name :put (h ~@body)))
+(defmacro OPTIONS*
+  [scope name & body]
+  `(action ~scope ~name :options (h ~@body)))
 
-(defmacro delete! [res name & body] `(action ~res ~name :delete (h ~@body)))
+(defmacro ANY*
+  [scope name & body]
+  `(action ~scope ~name :any (h ~@body)))
 
-(defmacro head! [res name & body] `(action ~res ~name :head (h ~@body)))
+(defmacro index
+  [scope & body]
+  `(GET* ~scope :index ~@body))
 
-(defmacro patch! [res name & body] `(action ~res ~name :patch (h ~@body)))
+(defmacro make
+  [scope & body]
+  `(POST* ~scope :make ~@body))
 
-(defmacro options! [res name & body] `(action ~res ~name :options (h ~@body)))
+(defmacro show
+  [scope & body]
+  `(GET* ~scope [:show "/:id"] ~@body))
 
-(defmacro any! [res name & body] `(action ~res ~name :any (h ~@body)))
+(defmacro change
+  [scope & body]
+  `(PUT* ~scope [:change "/:id"] ~@body))
 
-(defmacro index [res & body] `(get! ~res :index ~@body))
-
-(defmacro make [res & body] `(post! ~res :make ~@body))
-
-(defmacro show [res & body] `(get! ~res [:show "/:id"] ~@body))
-
-(defmacro change [res & body] `(put! ~res [:change "/:id"] ~@body))
-
-(defmacro destroy [res & body] `(delete! ~res [:destroy "/:id"] ~@body))
+(defmacro destroy
+  [scope & body]
+  `(DELTE* ~scope [:destroy "/:id"] ~@body))
 
 ;; Other
 
 (defn wrap*
-  [res actions middleware]
-  (update-in res [:middleware] conj [actions middleware]))
+  [scope name actions wrapper]
+  (update-in scope [:middleware] conj [name actions wrapper]))
 
 (defmacro wrap
-  [res actions & body]
-  `(wrap* ~res
+  [scope name actions & body]
+  `(wrap* ~scope
+          ~name
           ~actions
           (fn [handler#]
             (-> handler#
                 ~@body))))
 
-(defn add-middleware
-  [res]
-  (reduce
-   (fn [res [actions middleware]]
-     (reduce
-      (fn [res action]
-        (update-in res [:actions action :handler] middleware))
-      res
-      (if (empty? actions)
-        (keys (:actions res))
-        actions)))
-   res
-   (:middleware res)))
+(defn before-wrap*
+  [scope before name actions wrapper]
+  (assoc scope
+    :middleware
+    (reduce
+     (fn [middlewares [before-name :as middleware]]
+       (if (= before-name before)
+         (conj middlewares [name actions wrapper] middleware)
+         (conj middlewares middleware)))
+     []
+     (:middleware scope))))
 
-(defn make-handlers
-  [res]
-  (map
-   (fn [{:keys [method path handler]}]
-     (make-route method path handler))
-   (vals (:actions res))))
+(defmacro before-wrap
+  [scope before name actions & body]
+  `(before-wrap* ~scope
+                 ~before
+                 ~name
+                 ~actions
+                 (fn [handler#]
+                   (-> handler#
+                       ~@body))))
+
+(defn after-wrap*
+  [scope after name actions wrapper]
+  (assoc scope
+    :middleware
+    (reduce
+     (fn [middlewares [after-name :as middleware]]
+       (if (= after-name after)
+         (conj middlewares middleware [name actions wrapper])
+         (conj middlewares middleware)))
+     []
+     (:middleware scope))))
+
+(defmacro after-wrap
+  [scope before name actions & body]
+  `(after-wrap* ~scope
+                 ~before
+                 ~name
+                 ~actions
+                 (fn [handler#]
+                   (-> handler#
+                       ~@body))))
+
+(defn add-middleware
+  [scope]
+  (reduce
+   (fn [scope [_ actions middleware]]
+     (reduce
+      (fn [scope action]
+        (update-in scope [:routes action :handler] middleware))
+      scope
+      (if (empty? actions)
+        (keys (:routes scope))
+        actions)))
+   scope
+   (reverse (:middleware scope))))
 
 (defmulti route-for :type)
 
-(defmethod route-for :route [route] (:handler route))
+(defmethod route-for :route
+  [{:keys [method path handler]}]
+  (make-route method path handler))
 
 (defmethod route-for :scope
   [scope]
-  (context (:path scope) []
-           (map route-for (:routes scope))))
+  (apply
+   routes
+   (map
+    (fn [route]
+      (route-for
+       (assoc route
+         :path
+         (str (:path scope) (:path route)))))
+    (-> scope
+        add-middleware
+        :routes
+        vals))))
 
-(defmethod route-for :resources
-  [res]
-  (let [handler (apply routes (-> res add-middleware make-handlers))]
-    (if-let [nested (not-empty (:nested res))]
-      (;;apply
-       routes
-       handler
-       ;; (map
-       ;;  (fn [[path resources]]
-       ;;    (context path [] (route-for resources)))
-       ;;  nested)
-       )
-      handler)))
+(defmacro defapp
+  [name & routes*]
+  `(def ~name (apply routes (map route-for [~@routes*]))))
 
 (defn- throwf [msg & args]
   (throw (Exception. (apply format msg args))))
@@ -218,43 +290,31 @@
 (defn- query-url [uri params]
   (str (url uri params)))
 
-(defn- make-path
-  [res [action & actions] & [path]]
-  (if-let [x (get-in res [:actions action :path])]
-    (if actions
-      (throw (Exception. "Path not found"))
-      (str path x))
-    (let [x (get-in res [:nested action])]
-      (if (and x actions)
-        (make-path
-         x
-         actions
-         (str path (get-in res [:paths :nested])))
-        (throw (Exception. "Path not found"))))))
-
-(defmulti path-for (fn [value & args] (:type value)))
-
-;; (defmethod path-for :scope
-;;   [scope & [child & args]]
-;;   (if-let []
-;;     ))
-
-(defmethod path-for :resources
-  [res & [args & params]]
-  (let [path (make-path res args)
-        args (route-arguments path)
+(defn compile-path
+  [path params]
+  (let [args (route-arguments path)
         path-params (take (count args) params)
         query-params (first (drop (count args) params))]
     (-> path
         (path-url (apply hash-map (interleave args params)))
         (query-url query-params))))
 
-(defresources poto
-  (get! :index [] (str poto))
-  (make [] "sfdsf"))
+(defmulti link-for (fn [value & args] (:type value)))
 
-(defresources asdf
-  (get! :index [] (path-for asdf [:index]))
-  (make [] "sfdsf"))
+(defmethod link-for :route
+  [route & args]
+  {:method (.toUpperCase (name (:method route)))
+   :href   (compile-path (:path route) args)})
 
-((route-for asdf) {:request-method :get :uri "/asdf"})
+(defmethod link-for :scope
+  [scope [route & routes] & args]
+  (if-let [route (get-in scope [:routes route])]
+    (let [route (assoc route :path (str (:path scope) (:path route)))]
+      (if routes
+        (apply link-for route (concat [routes] args))
+        (apply link-for route args)))
+    (throw (Exception. "Path not found"))))
+
+(defn path-for
+  [route & args]
+  (:href (apply link-for (cons route args))))
