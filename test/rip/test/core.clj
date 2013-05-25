@@ -2,7 +2,8 @@
   (:use rip.core
         clojure.test
         compojure.core
-        compojure.handler
+        ring.middleware.params
+        ring.middleware.keyword-params
         ring.mock.request))
 
 (defroute home "/" :get [] "root")
@@ -41,16 +42,23 @@
        (handler req))))
 
 (defn wrap-body-params
-  []
-  )
+  [handler]
+  (h req
+     (handler (update-in req [:params :post] read-string))))
 
 (defresources posts
-  (wrap :body [] api wrap-body)
+  (wrap :response [] wrap-body)
   (index [] [{:post {:title "title"}}])
   (show [id] {:post {:title "title"}})
-  (change [id post] "ok")
-  (before-wrap :body :exists [:show :change] wrap-exists)
-  (after-wrap :body-to-params wrap-body-to-params))
+  (change [id post] post)
+  (before-wrap :response :exists [:show :change] wrap-exists)
+  (after-wrap
+   :exists
+   :body-to-params
+   [:change]
+   wrap-body-params
+   wrap-keyword-params
+   wrap-params))
 
 (defapp app
   home
@@ -98,9 +106,5 @@
        "{:post {:title \"title\"}}"
        (request :get "/posts/3")
        "Not Found"
-       (request :put "/posts/1" {:user {:title "hola"}})
-       "ok"))
-
-((-> (GET "/" [post] post) api) (request :get "/" {:post {:title "hola"}}))
-
-(run-tests)
+       (request :put "/posts/1" {:post {:title "hola"}})
+       (str {:title "hola"})))
