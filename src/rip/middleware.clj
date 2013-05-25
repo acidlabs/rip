@@ -3,18 +3,35 @@
    Some wrappers recives an optional response to be merged with the default error response."
   (:require [cheshire.core :as json]
             [clojure.data.xml :as xml])
-  (:use com.twinql.clojure.conneg))
+  (:use rip.util
+        rip.core
+        com.twinql.clojure.conneg))
 
-(def ^{:dynamic true :doc "Default xml serialization tags"} *xml-tags* {:list :list :item :item})
+(def ^{:dynamic true :doc "Default xml serialization tags"}
+  *xml-tags* {:list :list :item :item})
 
 (def ^{:dynamic true :doc "Default error responses"} *responses*
-  {:forbidden               {:status 403 :body "Forbidden."}
+  {:not-found               {:status 404 :body "Not Found."}
+   :forbidden               {:status 403 :body "Forbidden."}
    :unsupported-media-tpye  {:status 415 :body "Unsupported Media Type"}
    :request-entity-too-long {:status 413 :body "Request entity too large."}
    :not-acceptable          {:status 406 :body "Not Acceptable"}
    :precondition-failed     {:status 412 :body "Precondition Failed."}
    :unauthorized            {:status 401 :body "Unauthorized."}
-   :not-modified            {:status 304 :body "Not Modified."}})
+   :not-modified            {:status 304 :body "Not Modified."}
+   :bad-request             {:status 400 :body "Bad Request"}})
+
+(defn assoc-input [request input]
+  (assoc-in request [:context :input] input))
+
+(defn get-input [request]
+  (get-in request [:context :input]))
+
+(defn assoc-output [request output]
+  (assoc-in request [:context :output] output))
+
+(defn get-output [request]
+  (assoc-in request [:context :output]))
 
 (defn- xml->hash-map
   "Transforms clojure.data.xml.Element to clojure maps.
@@ -48,7 +65,9 @@
                (map #(apply map->xml %) cont)
                [(apply xml/element
                        (concat [(*xml-tags* :list) nil]
-                               (map (fn [val] (map->xml (*xml-tags* :item) val)) cont)))])
+                               (map (fn [val]
+                                      (map->xml (*xml-tags* :item) val))
+                                    cont)))])
              [(str cont)]))))
 
 (defn gen-xml [value tag]
@@ -56,27 +75,6 @@
 
 (defn parse-xml [s]
   (val (first (xml->hash-map (xml/parse-str s)))))
-
-(defn response
-  "Creates a response from the given body(hash-map or string), status,request
-   and xml-tag for the first tag in the xml output."
-  [body status request xml-tag]
-  (let [content-type (or (get-in request [:context :accept-content-type])
-                         (get-in request [:headers "content-type"])
-                         "application/json")]
-    {:status status
-     :body   (cond
-              (string? body)
-              body
-              (map? body)
-              (case content-type
-                "application/xml" (gen-xml body xml-tag)
-                (json/generate-string body)))
-     :headers {"content-type" (if (map? body)
-                                (if (= "*/*" content-type)
-                                  "application/json"
-                                  content-type)
-                                "text/html")}}))
 
 (defn- get-cause [e]
   (if-let [cause (.getCause e)]
@@ -102,17 +100,18 @@
 
 (defn wrap-supported-content-type
   "Validates the content type from the request."
-  [handler content-types & [response]]
+  [handler content-types]
   (fn [request]
-    (if (best-allowed-content-type (get-in request [:headers "content-type"]) content-types)
-      (handler request)
-      (*responses* :unsupported-media-tpye))))
+    (if-let [c-t (get-in request [:headers "content-type"])]
+      (if (best-allowed-content-type  content-types)
+        (*responses* :unsupported-media-tpye))
+      (handler request))))
 
 (defn wrap-request-entity-length
   "Validates the length of the request body."
-  [handler body-max-length & [response]]
+  [handler body-max-length]
   (fn [request]
-    (if (> (count (:body request)) body-max-length)
+    (if (> (count (slurp (:body request))) body-max-length)
       (handler request)
       (*responses* :request-entity-too-long))))
 
@@ -122,13 +121,15 @@
   [handler xml-tags]
   (fn [request]
     (let [bstr (slurp (:body request))
-          input (case (second (best-allowed-content-type
-                               (get-in request [:headers "content-type"]) #{"application/*"}))
-                  "json" (json/parse-string bstr true)
-                  "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
-                           (parse-xml bstr))
-                  :else bstr)]
-      (handler (assoc-in request [:context :input] input)))))
+          entity (case (second (best-allowed-content-type
+                                (get-in request
+                                        [:headers "content-type"])
+                                #{"application/*"}))
+                   "json" (json/parse-string bstr true)
+                   "xml"  (binding [*xml-tags* (merge xml-tags *xml-tags*)]
+                            (parse-xml bstr))
+                   :else bstr)]
+      (handler (update-in request [:params] merge entity)))))
 
 (defn wrap-accept-header
   "Checks the Accept header and validates based on the given supported content types.
@@ -142,16 +143,14 @@
         (*responses* :not-acceptable))
       (handler request))))
 
-(defn wrap-etag
+(defn wrap-if-match
   "Compares the etag from the result of calling the given function."
   [handler get-etag]
   (fn [request]
-    (let [etag (get-in request [:headers "etag"])]
-      (if (nil? etag)
+    (let [etag (get-in request [:headers "if-match"])]
+      (if (and etag (or (= etag "*") (= etag (get-etag request))))
         (handler request)
-        (if (= etag (get-etag request))
-          (*responses* :not-modified)
-          (*responses* :precondition-failed))))))
+        (*responses* :precondition-failed)))))
 
 (defn wrap-auth-header
   "Cecks the Authorization header."
@@ -163,14 +162,89 @@
 
 (defn wrap-default-responses
   "Sets the default responses for middlewares in this namespace"
-  [handler respones]
-  (binding [*responses* (merge respones *responses*)]
+  [handler responses]
+  (binding [*responses* (merge responses *responses*)]
     (fn [request]
       (handler request))))
 
-(defn wrap-location-header
-  "Sets the location header from passing the request to the given function.
-   The function should return the url of the created resource"
-  [handler get-url]
+;; (defn wrap-body-validation
+;;   [handler validator]
+;;   (fn [request]
+;;     (let [{:keys [valid? input output]} (validator (get-input request))]
+;;       (if valid?
+;;         (handler (assoc-input request output))
+;;         (entity-response input 400 request)))))
+
+(defmacro wrap-response
+  [handler bindings & body]
+  `(fn [request#]
+     (let [~bindings (~handler request#)]
+       ~@body)))
+
+(defn wrap-conditional
+  [handler f response]
   (fn [request]
-    (assoc-in (handler request) [:headers "location"] (get-url request))))
+    (if (f request)
+      (handler request)
+      response)))
+
+(defn wrap-exists?
+  [handler exists-handler key]
+  (fn [request]
+    (if-let [entity (exists-handler request)]
+      (handler (assoc-globals request {key entity}))
+      (*responses* :not-found))))
+
+(defn wrap-parse-params
+  [handler parsers]
+  (fn [request]
+    (try
+      (handler
+       (reduce
+        (fn [request [param parser]]
+          (update-in request [:params (name param)] parser))
+        request
+        parsers))
+      (catch Exception e
+        (.printStackTrace e)
+        (*responses* :bad-request)))))
+
+(defn wrap-pagination
+  [handler get-total path & [page-size]]
+  (h [page per_page :as req]
+     (let [total       (get-total req)
+           page        (or page 1)
+           page-size   (or per_page page-size 10)
+           total-pages (int (Math/ceil (/ total page-size)))
+           page-path   (fn [page]
+                         (conj path {:page page :per_page page-size}))]
+       (handler
+        (assoc-globals
+         req
+         {:limit  page-size
+          :offset (* (dec page) page-size)
+          :links  (merge
+                   (if (> page 1)
+                     {:first (page-path 1)
+                      :prev  (page-path (dec page))})
+                   (if (< page total-pages)
+                     {:next (page-path (inc page))
+                      :last (page-path total-pages)}))})))))
+
+(defn wrap-fn
+  [handler f]
+  (fn [request] (f (handler request))))
+
+(defmacro wrap-macro
+  [handler macro & args]
+  `(fn [request#] (~macro (~handler request#) ~@args)))
+
+(defn wrap-collection
+  [res action path get-total & [page-size]]
+  (-> res
+      (wrap [action]
+            (wrap-fn (fn [u] {:users u}))
+            (wrap-pagination get-total path (or page-size 10))
+            (wrap-parse-params
+             {:page     (parser long)
+              :per_page (parser long)}))))
