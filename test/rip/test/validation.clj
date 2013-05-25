@@ -1,7 +1,6 @@
 (ns rip.test.validation
   (:use rip.validation
         korma.core
-        korma.db
         clojure.test))
 
 (defn query
@@ -74,51 +73,49 @@
         Integer)
        ["SELECT \"entity\".* FROM \"entity\" WHERE (FALSE AND (((? < ?) AND (? = ? AND ? = ?)) AND (((? = ? OR ? = ?) OR (? < ?)) OR (? = ? AND ? = ?))))" ["entity.a" "3" "entity.a" 4 "entity.a" 2 "entity.a" 1 "entity.a" 2 "entity.a" "4" "entity.a" 4 "entity.a" 8]]))
 
-(run-all-tests)
-
 (testing "Nested entity predicate"
   (is (= (query
           (validate-filter "entity" {:x [Boolean] :y [String]} {:x false :y "select"} nil))
          ["SELECT \"entity\".* FROM \"entity\" WHERE (? = ? AND ? = FALSE)" ["entity.y" "select" "entity.x"]])))
 
-(declare books users)
+;; (declare books users)
 
-(defentity users
-  (has-many books))
+;; (defentity users
+;;   (has-many books))
 
-(defentity stores)
+;; (defentity stores)
 
-(defentity books
-  (belongs-to users)
-  (belongs-to stores)
-  (belongs-to [:author users]))
+;; (defentity books
+;;   (belongs-to users)
+;;   (belongs-to stores)
+;;   (belongs-to [:author users]))
 
-(make-joins
- users
- (:name users)
- {:books [:inner {:stores :left}]})
+;; (make-joins
+;;  users
+;;  (:name users)
+;;  {:books [:inner {:stores :left}]})
 
-{:c [:outer {:a :left}]
- :b :inner}
+;; {:c [:outer {:a :left}]
+;;  :b :inner}
 
-(let [{:keys [sql-str params]}
-      (query-only
-       (select (:query ((filter-validator
-                         users
-                         {:m [{:y [Integer :o]} :books]
-                          :x [Integer :p]}
-                         {:books :inner})
-                        {:$or [{:m {:y "23"}} {:x "1111"}]}))
-               ))]
-  [sql-str (vec params)])
+;; (let [{:keys [sql-str params]}
+;;       (query-only
+;;        (select (:query ((filter-validator
+;;                          users
+;;                          {:m [{:y [Integer :o]} :books]
+;;                           :x [Integer :p]}
+;;                          {:books :inner})
+;;                         {:$or [{:m {:y "23"}} {:x "1111"}]}))
+;;                ))]
+;;   [sql-str (vec params)])
 
-(query
- (select
-  (:query ((filter-validator
-            users
-            {:m [{:y [Integer :o]} :books]
-             :x [Integer]}
-            {:books :inner})
-           {:$or [{:m {:y "23"}} {:x "1111"}]}))))
+;; (query
+;;  (select*
+;;   (:query ((filter-validator
+;;             users
+;;             {:m [{:y [Integer :o]} :books]
+;;              :x [Integer]}
+;;             {:books :inner})
+;;            {:$or [{:m {:y "23"}} {:x "1111"}]}))))
 
-(test-field  :x "1111" (get-valid? Integer) "users")
+;; (test-field  :x "1111" (get-valid? Integer) "users")
