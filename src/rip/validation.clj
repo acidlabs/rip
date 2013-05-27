@@ -7,188 +7,154 @@
         rip.db)
   (:require [clojure.string :as st]))
 
-;; Body validation
-
-(def ^{:dynamic true} *default-messages*
-  {:min-size       "The length must be at least %s"
-   :max-size       "The length must be up to %s"
-   :range-size     "The length must be between %s and %s"
-   :type-error     "Invalid type"
-   :required-error "This field is required"
-   :max            "It must be up to %s"
-   :min            "It must be at least %s"
-   :range          "It must be between %s and %s"
-   :query-error    "Invalid query"
-   :no-error       ""})
-
-(defn gen-validation
-  [test code & msg-params]
-  {:valid? test
-   :$errors [{:message (apply format (code *default-messages*) msg-params)
-              :code code}]})
-
 ;; Collections and strings constraints
 
-(defn min-size [min] (fn [val] (gen-validation (>= (count val) min) :min-size min)))
-(defn max-size [max] (fn [val] (gen-validation (<= (count val) max) :max-size max)))
-(defn range-size [min max] (fn [val] (gen-validation (or (>= (count val) min)
-                                                        (<= (count val) :range-size min max)))))
+(defn min-size [min] (fn [val] (>= (count val) min)))
+(defn max-size [max] (fn [val] (<= (count val) max)))
+(defn range-size [min max] (fn [val] (or (>= (count val) min) (<= (count val) max))))
 
 ;; Numbers constraints
 
-(defn min-val [min] (fn [val] (gen-validation (>= val min) :min min)))
-(defn max-val [max] (fn [val] (gen-validation (<= val max) :max max)))
-(defn range-val [min max] (fn [val] (gen-validation (or (>= val min) (<= val max)) :range min max)))
+(defn min-val [min] (fn [val] (>= val min)))
+(defn max-val [max] (fn [val] (<= val max)))
+(defn range-val [min max] (fn [val] (or (>= val min) (<= val max))))
 
-(def parse-types
-  {Integer    #(Integer/parseInt %)
-   Double     #(Double/parseDouble %)
-   Boolean    #(Boolean/parseBoolean %)
-   Long       #(Long/parseLong %)
-   BigInteger #(BigInteger. %)})
+(defn validator*
+  [name]
+  {:name name
+   :fields []
+   :nested []
+   :constraints []})
 
-(defn- gen-parser
-  [value valid-type]
-  (let [parser (cond
-                (class? valid-type)
-                (parse-types valid-type)
-                (fn? valid-type)
-                valid-type)
-        new-value (try ( (str value))
-                       (catch Exception e nil))]
-    (assoc (gen-validation (if new-value true false) :query-error)
-      :$input {}
-      :output new-value)))
+(defmacro validator
+  [name & body]
+  `(-> (validator* ~name)
+       ~@body))
 
-(defn- check-type
-  [value valid-type]
-  (if (= (type value) valid-type)
-    value
-    (try ((parse-types valid-type) (str value))
-         (catch Exception e nil))))
+(defmacro defvalidator
+  [validator-name & body]
+  `(validator ~(keyword (name validator-name)) ~@body))
 
-(defn- type-of
-  {:no-doc true}
-  [valid-type]
-  (fn [value required?]
-    (if value
-      (cond (class? valid-type)
-            (let [new-value (check-type value valid-type)]
-              (assoc (gen-validation (not (nil? new-value)) :type-error)
-                :output new-value :$input value))
-            (fn? valid-type)
-            (valid-type value))
-      (if required?
-        (gen-validation false :required-error)
-        (gen-validation true :no-error)))))
+(defn validates
+  [val f & [message]]
+  (update-in val [:constraints] conj [f (or message "invalid")]))
 
-(defn- class-fn
-  [valid-type]
-  (fn [[valid-list? input output] value]
-    (let [new-value   (check-type value valid-type)
-          valid-elem? (not (nil? new-value))]
-      [(and valid-elem? valid-list?)
-       (if valid-elem?
-         input
-         (conj input (assoc (gen-validation (not (nil? new-value)) :type-error)
-                       :input value)))
-       (if new-value (conj output new-value) output)])))
+(defn field*
+  [validator name field]
+  (assoc-in validator [:fields name] field))
 
-(defn- valid-fn
-  [valid-type]
-  (fn [[valid-list? input output] val]
-    (let [{valid-elem? :valid? output-elem :output :as validation} (valid-type val)]
-      [(and valid-elem? valid-list?)
-       (if valid-elem? input (conj input (select-keys validation [:$input :$errors])))
-       (if valid-elem? (conj output output-elem) output)])))
+(defn make-field
+  [name]
+  {:name        name
+   :parser      identity
+   :required?   false
+   :constraints []})
 
-(defn- list-of
-  {:no-doc true}
-  [valid-type]
-  (fn [list required?]
-    (if (not-empty list)
-      (let [[valid? input output]
-            (reduce
-             (cond (class? valid-type) (class-fn valid-type)
-                   (fn? valid-type) (valid-fn valid-type))
-             [true [] []]
-             list)]
-        (assoc (gen-validation valid? :type-error) :output output :$input input))
-      (if required?
-        (gen-validation false :required-error)
-        (gen-validation true :no-error)))))
+(defmacro field
+  [validator name & body]
+  `(field* ~validator ~name
+           (-> (make-field ~name)
+               ~@body)))
 
-(defn- validate
-  [schema value]
-  (let [[valid-output error-output]
-        (reduce
-         (fn [[valid-output error-output]
-             [field-name {:keys [type-validator required? constraints]}]]
-           (let [{:keys [valid? $input output] :as validation}
-                 (type-validator (field-name value) required?)]
-             (if valid?
-               (if output
-                 (let [errors (reduce
-                               (fn [total-errors constraint]
-                                 (let [{:keys [valid? errors]} (constraint output)]
-                                   (if valid? total-errors (concat errors total-errors))))
-                               []
-                               constraints)
-                       valid? (empty? errors)]
-                   (if valid?
-                     [(assoc valid-output field-name output) error-output]
-                     [valid-output (assoc error-output field-name {:$input $input :$errors errors})]))
-                 [valid-output error-output])
-               [(assoc valid-output field-name output)
-                (assoc error-output field-name
-                       (if (coll? output)
-                         valid-output
-                         (select-keys validation [:$input :$errors])))])))
-         [{} {}]
-         schema)]
-    {:valid? (and (not (empty? valid-output)) (empty? error-output))
-     :input  error-output
-     :output valid-output}))
+(def parsers
+  {:int        #(Integer/parseInt %)
+   :double     #(Double/parseDouble %)
+   :boolean    #(Boolean/parseBoolean %)
+   :long       #(Long/parseLong %)
+   :bigint     #(BigInteger. %)
+   :bigdecimal #(BigDecimal. %)
+   :uuid       #(java.util.UUID/fromString %)})
 
-(defn validator
-  "Used to validate body content already parsed with wrap-body-parser middleware.
-   Receives a schema indicating type of each field.
-   Optionaly a map with required fields and other constraints can be passed.
-   Calling the returned function results in a map with values:
-    - valid? = If the validation was successful
-    - input  = Map with errors if valid? is false, each invalid field contains a map with the input and errors.
-    - output = Valid map
-   Usage:
-          (let [v (validator
-                    {:name   String
-                     :phones [String]
-                     :books  [{:year String}]}
-                    {:required    [:name]
-                     :constraints {:name [(max-size 30) (min-size 10)]}})]
-            (v {:required    [:name]
-                :constraints {:name [(max-size 30) (min-size 10)]}}))
-           ;; => {:valid? false,
-                  :input
-                  {:name
-                   {:input \"Sebastian\",
-                    :errors
-                    ({:message \"The length must be at least 10\" , :code :min-size})},
-                   :phones
-                   [{:input 3,
-                     :valid? false,
-                     :errors [{:message \"Invalid type\", :code :type-error}]}]},
-                  :output {:phones [\"555-555-555\"], :books [{:year 2012}]}}"
-  [schema & [{:keys [required constraints]}]]
-  (let [required (set required)]
-    (fn [body]
-      (validate (reduce
-                 (fn [schema [k v]]
-                   (assoc schema
-                     k {:type-validator v
-                        :required?      (contains? required k)
-                        :constraints    (k constraints)}))
-                 {}
-                 schema) body))))
+(defn- make-parser
+  [parser]
+  (fn [value]
+    (try (parser (str value)) (catch Exception e nil))))
+
+(defn type-of
+  [field type]
+  (assoc field
+    :parser
+    (make-parser
+     (cond
+      (keyword? type) (parsers type)
+      (fn? type) type))))
+
+(defn required
+  [field]
+  (assoc field :required? true))
+
+(def validate-field
+  [field value]
+  (if (:list-of? field)
+    (->> validation
+         (required-list? value)
+         (list-of? field field-value validator))
+    (->> validation
+         (if (:required? field)
+           (merge-validation (type-of? field value))
+           (valid? field)))))
+
+(defn validate-nested
+  [arg-list]
+  )
+
+(defn not-present?
+  [field value]
+  (or (and (:list-of? field) (empty? value)) ))
+
+(if-let [field-value ((:parser field) field-value)]
+  (let [(validate-field )]
+    (if (:valid? field-validation)
+      validation
+
+      ()))
+  (-> validation
+      (update-in [:errors] assoc field (format (:required-message validator) field-value))
+      (assoc :valid? false)))
+
+(defn validate-fields
+  [validator value & [validation]]
+  (reduce
+   (fn [validation [name field]]
+     (let [field-value (name value)]
+       (if (nil? value)
+         (if (:required? field)
+           (-> validation
+               (update-in [:errors] assoc field (format (:type-message validator) field-value))
+               (assoc :valid? false))
+           validation)
+         (if (:list-of? field)
+           (if )
+           ))))
+   (or {:value value :valid? true :errors {}} validation)
+   (:fields field)))
+
+
+(defn validate-nested-fields
+  [[name f]]
+  )
+
+(defn validate-constraints
+  [validator value & [validation]]
+  )
+
+(defn validate
+  [validator value] )
+
+(defmacro if-valid?
+  ([value validator bindings then]
+     `(if-valid?
+       ~value
+       ~validator
+       ~bindings
+       ~then
+       nil))
+  ([value validator bindings then else & oldform]
+     `(let [validation# ~(validate value validator)
+            ~bindings [(:value validation#) (:errors validation#)]]
+        (if (:vaild? validation#)
+          ~then
+          ~else))))
 
 ;; Filter validation
 

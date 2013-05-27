@@ -3,6 +3,29 @@
         korma.core
         clojure.test))
 
+(defvalidator user
+  (field :name required)
+  (field :age (type-of :int))
+  (field :token (type-of :uuid))
+  (field :birthday (type-of #(java.sql.Date/valueOf %)))
+  (field :phones (list-of :string) (required (comp (partial > 18) :age)))
+  (nest-one
+   :book
+   (validator (field :year required)))
+  (validate (comp (max-size) 20 :name) "Name too long")
+  (constraint
+   :age
+   required
+   (validate (min-val 13) "Must be over 13"))
+  (default-messages
+    {:required ""
+     :type     ""}))
+
+(with-validate (validator {})
+  value errors
+  errors
+  "valid")
+
 (defn query
   [[_ f] & [ent]]
   (let [{:keys [sql-str params]}
@@ -62,7 +85,7 @@
                        :field)
        ["SELECT \"entity\".* FROM \"entity\" WHERE (((? < ?) AND (? = ? AND ? = ?)) AND (((? = ? OR ? = ?) OR (? < ?)) OR (? = ? AND ? = ?)))" ["entity.field" 3 "entity.field" 4 "entity.field" 2 "entity.field" 1 "entity.field" 2 "entity.field" 4 "entity.field" 4 "entity.field" 8]]))
 
-(deftest field
+(deftest field-test
   (are [a b] (= a b)
        (test-field
         :a
