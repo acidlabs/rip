@@ -107,44 +107,49 @@
        (let-request [~bindings request#] ~@body))))
 
 (defn action
-  [scope name-path method handler]
-  (let [[name path] (if (vector? name-path) name-path [name-path ""])]
+  [scope opts method handler]
+  (let [{:keys [name path] :as opts}
+        (cond
+         (map? opts)
+         opts
+         (keyword? opts)
+         {:name opts})]
     (assoc-in
      scope
      [:routes name]
-     (route* name path method handler))))
+     (route* name (str path) method handler))))
 
 (defmacro GET*
-  [scope name & body]
-  `(action ~scope ~name :get (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :get (h ~@body)))
 
 (defmacro POST*
-  [scope name & body]
-  `(action ~scope ~name :post (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :post (h ~@body)))
 
 (defmacro PUT*
-  [scope name & body]
-  `(action ~scope ~name :put (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :put (h ~@body)))
 
 (defmacro DELETE*
-  [scope name & body]
-  `(action ~scope ~name :delete (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :delete (h ~@body)))
 
 (defmacro HEAD*
-  [scope name & body]
-  `(action ~scope ~name :head (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :head (h ~@body)))
 
 (defmacro PATCH*
-  [scope name & body]
-  `(action ~scope ~name :patch (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :patch (h ~@body)))
 
 (defmacro OPTIONS*
-  [scope name & body]
-  `(action ~scope ~name :options (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :options (h ~@body)))
 
 (defmacro ANY*
-  [scope name & body]
-  `(action ~scope ~name :any (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :any (h ~@body)))
 
 (defmacro index
   [scope & body]
