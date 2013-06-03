@@ -107,44 +107,48 @@
        (let-request [~bindings request#] ~@body))))
 
 (defn action
-  [scope name-path method handler]
-  (let [[name path] (if (vector? name-path) name-path [name-path ""])]
+  [scope opts method handler]
+  (let [{:keys [name path] :as opts} (cond
+                                      (map? opts) opts
+                                      (keyword? opts) {:name opts})]
     (assoc-in
      scope
      [:routes name]
-     (route* name path method handler))))
+     (merge
+      (route* name path method handler)
+      opts))))
 
 (defmacro GET*
-  [scope name & body]
-  `(action ~scope ~name :get (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :get (h ~@body)))
 
 (defmacro POST*
-  [scope name & body]
-  `(action ~scope ~name :post (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :post (h ~@body)))
 
 (defmacro PUT*
-  [scope name & body]
-  `(action ~scope ~name :put (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :put (h ~@body)))
 
 (defmacro DELETE*
-  [scope name & body]
-  `(action ~scope ~name :delete (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :delete (h ~@body)))
 
 (defmacro HEAD*
-  [scope name & body]
-  `(action ~scope ~name :head (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :head (h ~@body)))
 
 (defmacro PATCH*
-  [scope name & body]
-  `(action ~scope ~name :patch (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :patch (h ~@body)))
 
 (defmacro OPTIONS*
-  [scope name & body]
-  `(action ~scope ~name :options (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :options (h ~@body)))
 
 (defmacro ANY*
-  [scope name & body]
-  `(action ~scope ~name :any (h ~@body)))
+  [scope opts & body]
+  `(action ~scope ~opts :any (h ~@body)))
 
 (defmacro index
   [scope & body]
@@ -156,32 +160,23 @@
 
 (defmacro show
   [scope & body]
-  `(GET* ~scope [:show "/:id"] ~@body))
+  `(GET* ~scope {:name :show :path "/:id"} ~@body))
 
 (defmacro change
   [scope & body]
-  `(PUT* ~scope [:change "/:id"] ~@body))
+  `(PUT* ~scope {:name :change :path "/:id"} ~@body))
 
 (defmacro destroy
   [scope & body]
-  `(DELTE* ~scope [:destroy "/:id"] ~@body))
+  `(DELTE* ~scope {:name :destroy :path "/:id"} ~@body))
 
 ;; Other
 
-(defn wrap*
+(defn wrap
   [scope name actions wrapper]
   (update-in scope [:middleware] conj [name actions wrapper]))
 
-(defmacro wrap
-  [scope name actions & body]
-  `(wrap* ~scope
-          ~name
-          ~actions
-          (fn [handler#]
-            (-> handler#
-                ~@body))))
-
-(defn before-wrap*
+(defn before-wrap
   [scope before name actions wrapper]
   (assoc scope
     :middleware
@@ -193,17 +188,7 @@
      []
      (:middleware scope))))
 
-(defmacro before-wrap
-  [scope before name actions & body]
-  `(before-wrap* ~scope
-                 ~before
-                 ~name
-                 ~actions
-                 (fn [handler#]
-                   (-> handler#
-                       ~@body))))
-
-(defn after-wrap*
+(defn after-wrap
   [scope after name actions wrapper]
   (assoc scope
     :middleware
@@ -215,15 +200,15 @@
      []
      (:middleware scope))))
 
-(defmacro after-wrap
-  [scope before name actions & body]
-  `(after-wrap* ~scope
-                 ~before
-                 ~name
-                 ~actions
-                 (fn [handler#]
-                   (-> handler#
-                       ~@body))))
+(defn- select-actions
+  [{:keys [except only]} actions]
+  (if except
+    (let [except (set except)]
+      (filter (fn [a] (not (contains? except a))) actions))
+    (if only
+      (let [except (set except)]
+        (filter (fn [a] (contains? except a)) actions))
+      (throw (Exception. "option map must contain :only or :exception")))))
 
 (defn add-middleware
   [scope]
@@ -235,7 +220,13 @@
       scope
       (if (empty? actions)
         (keys (:routes scope))
-        actions)))
+        (cond
+         (map? actions)
+         (select-actions actions (keys (:routes scope)))
+         (fn? actions)
+         (map first (filter (comp actions second) (:routes scope)))
+         (sequential? actions)
+         actions))))
    scope
    (reverse (:middleware scope))))
 

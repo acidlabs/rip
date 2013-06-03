@@ -12,7 +12,7 @@
   (index [] (path-for users [:index] {:page 1}))
   (show [id] id)
   (member
-   (PATCH* [:activate "/activate"] [id] (str id " activated")))
+   (PATCH* {:name :activate :path "/activate"} [id] (str id " activated")))
   (nest-resources
    :user
    (resources
@@ -23,7 +23,7 @@
 (defscope api
   "/api"
   (GET* :home [] "api")
-  (POST* [:login "/login"] [] "login")
+  (POST* {:name :login :path "/login"} [] "login")
   (include
    "/version/:version"
    (GET* :version [version] version)
@@ -56,9 +56,7 @@
    :exists
    :body-to-params
    [:change]
-   wrap-body-params
-   wrap-keyword-params
-   wrap-params))
+   #(-> % wrap-body-params wrap-keyword-params wrap-params)))
 
 (defapp app
   home
