@@ -9,7 +9,7 @@ REST in Peace is a library for RESTful APIs built on top of compojure with some 
 Add the following dependency to your `project.clj` file:
 
 ```clj
-[rip "0.1.0"]
+[rip "0.0.10"]
 ```
 
 ## Documentation
@@ -18,12 +18,7 @@ Add the following dependency to your `project.clj` file:
 * [API Docs](http://acidlabs.github.com/rip)
 
 ## Routes
-
 ```clojure
-(ns app
-  (:use rip.core
-        compojure.core))
-
 ;; Single named route
 (defroute home "/" :get [] "welcome")
 
@@ -36,9 +31,9 @@ Add the following dependency to your `project.clj` file:
   ;; GET /api
   (GET* :home [] "api home")
 
-  ;; Use a vector to specify a path
+  ;; Use a map instead of a keyword to specify a path
   ;; GET /api/about
-  (GET* [:about "/about"] [] "a REST API for the win")
+  (GET* {:name :about :path "/about"} [] "a REST API for the win")
 
   ;; Include other actions with a default path
   (include
@@ -78,7 +73,7 @@ Add the following dependency to your `project.clj` file:
     ;; Same as using (include "/:id")
     (member
      ;; PATCH /api/users/:id/activate
-     (PATCH* [:activate "/activate"] [id] (str "user " id " activated")))
+     (PATCH* {:name :activate :path "/activate"} [id] (str "user " id " activated")))
 
     ;; Nest resources passing the member key
     (nest-resources
@@ -93,4 +88,50 @@ Add the following dependency to your `project.clj` file:
 (defroutes app
   (route-for home)
   (route-for api))
+```
+## Validations
+```clojure
+;; Define a validator
+(defvalidator user
+  ;; Add a field
+  (field :name)
+  
+  ;; Specify the type of a field with the type-of function
+  ;; In case the parser fails, a type error will be added to the validation.
+  ;; Default types :int :double :float :boolean :long :bigint :bigdecimal :uuid
+  (field :age (type-of :int))
+  
+  ;; Custom parsers can also be passed to the type-of
+  (field :birthday (type-of #(java.sql.Date/valueOf %)))
+  
+  ;; Add constraints like 'required' or custom validations using the validates function
+  ;; validates requires a predicate function and an optional message
+  (field :email 
+         required 
+         (validates (fn [email] (boolean (re-matches #".+\@.+\..+" email)))
+         "invalid format"))
+  
+  ;; Message can also be a map in case you want to specify an error code for your API
+  (field :password required (validates (min-length 6) {:code 123 :message "too short"}))  
+  
+  (field :password-confirmation required)
+  
+  ;; Include global validations
+  (validates
+   (fn [user] (= (:password user) (:password-confirmation user)))
+   "Password confirmation doesn't match confirmation")
+   
+  ;; Nest validators
+  (nest-one :profile
+    (validator
+      (field :description)))
+  (nest-many :))
+   
+;; Validate using the if-valid  macro to simplify evaluation
+(if-valid (validate user {:email "sebastian@rip.com"})
+  ;; bindings 
+  [value errors]
+  ;; if else expressions
+  "ok"
+  "error")
 ```
