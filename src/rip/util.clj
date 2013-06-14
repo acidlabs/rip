@@ -51,20 +51,7 @@
    request
    globals))
 
-(defn parse-long [st] (Long/parseLong st))
-
-(def parsers
-  {int    #(Integer/parseInt %)
-   float  #(Float/parseFloat %)
-   double #(Double/parseDouble %)
-   long   #(Long/parseLong %)
-   bigint #(BigInteger. %)
-   bigdec #(BigDecimal. %)})
-
-(defn parser [type] (parsers type))
-
-(defn can
-  [actions & [pred]]
+(defn in?
+  [& actions]
   (or (empty? actions)
-      (and (contains? (set actions) *current-action*)
-           (if (nil? pred) true pred))))
+      (contains? (set actions) *current-action*)))
