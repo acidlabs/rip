@@ -9,7 +9,7 @@
 (defroute home "/" :get [] "root")
 
 (defresources users
-  (index [] (path-for users [:index] {:page 1}))
+  (index [] (path-for :users [:index] {:page 1}))
   (show [id] id)
   (member
    (PATCH* {:name :activate :path "/activate"} [id] (str id " activated")))
@@ -18,7 +18,7 @@
    (resources
     :documents
     (index [user-id] (str user-id " documents"))
-    (show [user-id id] (path-for users [:documents :show] 1 2)))))
+    (show [user-id id] (path-for :users [:documents :show] 1 2)))))
 
 (defscope api
   "/api"
@@ -27,7 +27,7 @@
   (include
    "/version/:version"
    (GET* :version [version] version)
-   (make [version] (path-for api [:make] version)))
+   (make [version] (path-for :api [:make] version)))
   (nest users))
 
 (defn wrap-body
@@ -51,6 +51,8 @@
   (index [] [{:post {:title "title"}}])
   (show [id] {:post {:title "title"}})
   (change [id post] post)
+  (GET* {:name :test :path "/test"} []
+        (name *current-action*))
   (before-wrap :response :exists [:show :change] wrap-exists)
   (after-wrap
    :exists
@@ -58,11 +60,12 @@
    [:change]
    #(-> % wrap-body-params wrap-keyword-params wrap-params)))
 
-(defapp app
-  home
-  api
-  users
-  posts)
+(def app
+  (routes-for
+   home
+   api
+   users
+   posts))
 
 (deftest scope-and-route
   (are [req resp] (-> req app :body (= resp))
@@ -106,3 +109,8 @@
        "Not Found"
        (request :put "/posts/1" {:post {:title "hola"}})
        (str {:title "hola"})))
+
+(deftest current-action-test
+  (are [req resp] (-> req app :body (= resp))
+       (request :get "/posts/test")
+       "test"))

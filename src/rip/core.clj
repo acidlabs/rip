@@ -5,6 +5,9 @@
         clout.core)
   (:require [clojure.string :as st]))
 
+(def ^:dynamic *current-action* nil)
+(def ^:dynamic *routes* {})
+
 ;;Routing
 
 (defn scope*
@@ -210,6 +213,19 @@
         (filter (fn [a] (contains? except a)) actions))
       (throw (Exception. "option map must contain :only or :exception")))))
 
+(defn add-current-action-middleware
+  [scope]
+  (reduce
+   (fn [scope [action]]
+     (update-in scope
+                [:routes action :handler]
+                (fn [h]
+                  (fn [r]
+                    (binding [*current-action* action]
+                      (h r))))))
+   scope
+   (:routes scope)))
+
 (defn add-middleware
   [scope]
   (reduce
@@ -248,12 +264,24 @@
          (str (:path scope) (:path route)))))
     (-> scope
         add-middleware
+        add-current-action-middleware
         :routes
         vals))))
 
-(defmacro defapp
-  [name & routes*]
-  `(def ~name (apply routes (map route-for [~@routes*]))))
+(defn wrap-routes
+  [handler routes]
+  (let [routes* (reduce
+                 (fn [routes route]
+                   (assoc routes (:name route) route))
+                 {}
+                 routes)]
+    (fn [request]
+      (binding [*routes* routes*]
+        (handler request)))))
+
+(defn routes-for
+  [& routes*]
+  (wrap-routes (apply routes (map route-for routes*)) routes*))
 
 (defn- throwf [msg & args]
   (throw (Exception. (apply format msg args))))
@@ -290,20 +318,28 @@
         (path-url (apply hash-map (interleave args params)))
         (query-url query-params))))
 
-(defmulti link-for (fn [value & args] (:type value)))
+(declare link-for)
 
-(defmethod link-for :route
+(defmulti link-for* (fn [value & args] (:type value)))
+
+(defmethod link-for* :route
   [route & args]
   {:method (.toUpperCase (name (:method route)))
    :href   (compile-path (:path route) args)})
 
-(defmethod link-for :scope
+(defmethod link-for* :scope
   [scope [route & routes] & args]
   (if-let [route (get-in scope [:routes route])]
     (let [route (assoc route :path (str (:path scope) (:path route)))]
       (if routes
-        (apply link-for route (concat [routes] args))
-        (apply link-for route args)))
+        (apply link-for* route (concat [routes] args))
+        (apply link-for* route args)))
+    (throw (Exception. "Path not found"))))
+
+(defn link-for
+  [route & args]
+  (if-let [route (route *routes*)]
+    (apply link-for* (cons route args))
     (throw (Exception. "Path not found"))))
 
 (defn path-for

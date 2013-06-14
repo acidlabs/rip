@@ -1,6 +1,5 @@
 (ns rip.util
-  (:use rip.core
-        [korma.core :exclude (nest create)]))
+  (:use rip.core))
 
 (defn get-action
   [res [action & actions]]
@@ -29,10 +28,6 @@
     paths)
    (sequential? value)
    (map (fn [v] (assoc-links v paths)) value)))
-
-(defn create-response
-  [body location]
-  )
 
 (defmacro upload
   [res opts bindings & body]
@@ -67,3 +62,9 @@
    bigdec #(BigDecimal. %)})
 
 (defn parser [type] (parsers type))
+
+(defn can
+  [actions & [pred]]
+  (or (empty? actions)
+      (and (contains? (set actions) *current-action*)
+           (if (nil? pred) true pred))))
