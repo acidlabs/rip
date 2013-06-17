@@ -239,12 +239,12 @@
   [handler macro & args]
   `(fn [request#] (~macro (~handler request#) ~@args)))
 
-(defn wrap-collection
-  [res action path get-total & [page-size]]
-  (-> res
-      (wrap [action]
-            (wrap-fn (fn [u] {:users u}))
-            (wrap-pagination get-total path (or page-size 10))
-            (wrap-parse-params
-             {:page     (parser long)
-              :per_page (parser long)}))))
+;; (defn wrap-collection
+;;   [res action path get-total & [page-size]]
+;;   (-> res
+;;       (wrap [action]
+;;             (wrap-fn (fn [u] {:users u}))
+;;             (wrap-pagination get-total path (or page-size 10))
+;;             (wrap-parse-params
+;;              {:page     (parser long)
+;;               :per_page (parser long)}))))

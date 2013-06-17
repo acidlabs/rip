@@ -25,6 +25,11 @@
 (defn max-val [max] (fn [val] (<= val max)))
 (defn range-val [min max] (fn [val] (or (>= val min) (<= val max))))
 
+(defn blank?
+  [value]
+  (or (nil? value)
+      (and (string? value) (empty? value))))
+
 (defn validator*
   []
   {:fields {}
@@ -96,7 +101,7 @@
 
 (defn validate-field
   [{:keys [parser required? constraints] :as field} value]
-  (if value
+  (if-not (blank? value)
     (if-let [value (if parser (parser value) value)]
       (reduce
        (fn [validation [pred error]]
@@ -120,12 +125,14 @@
            {:keys [value errors valid?]}
            (validate-field field field-value)]
        (if valid?
-         (if value
+         (if-not (blank? field)
            (update-in validation [:value] assoc name value)
            validation)
          (-> validation
              (assoc :valid? false)
-             (update-in [:errors] concat (map #(assoc % :field name) errors))))))
+             (update-in [:errors]
+                        concat
+                        (map #(assoc % :field name) errors))))))
    {:value value :valid? true :errors []}
    (:fields validator)))
 
